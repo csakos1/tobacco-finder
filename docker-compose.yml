@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  db:
+    # Speciális PostGIS image-et használunk, nem a sima postgres-t!
+    image: postgis/postgis:15-3.3
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tobacco_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Ez biztosítja, hogy ha leállítod a konténert, az adatok megmaradnak
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

@@ -1,0 +1,27 @@
+// Ez generálja a JavaScript klienst, amit a kódunk használ majd
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Ez mondja meg, hogy PostgreSQL-t használunk, és honnan vegye a címet
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A modellünk
+model TobaccoShop {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  address     String   @db.VarChar(255)
+  city        String   @db.VarChar(100)
+  openingHours Json?   @map("opening_hours")
+  
+  // A PostGIS típus
+  location    Unsupported("geography(Point, 4326)")?
+
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("tobacco_shops")
+  @@index([location], name: "shop_location_idx", type: Gist)
+}
