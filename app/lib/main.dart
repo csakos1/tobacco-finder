@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Dohánybolt Kereső',
-      debugShowCheckedModeBanner: false, // Eltünteti a "DEBUG" szalagot a sarokból
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -38,7 +38,7 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
   bool isLoading = true;
   LatLng? myPosition;
   final Distance distanceCalculator = const Distance();
-  LatLng mapCenter = const LatLng(47.50712, 19.04557); // Alapból Budapest
+  LatLng mapCenter = const LatLng(47.50712, 19.04557);
 
   @override
   void initState() {
@@ -75,7 +75,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
   // --- 2. BOLTOK LETÖLTÉSE ---
   Future<void> fetchShops() async {
     try {
-      // Mivel van 'adb reverse', a localhost működik a telefonon is
       const String baseUrl = 'http://localhost:3000/shops';
       var response = await Dio().get(baseUrl);
       
@@ -91,19 +90,18 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
     }
   }
 
-  // --- 3. NYITVATARTÁS LOGIKA (NYITVA VAN-E MOST?) ---
+  // --- 3. NYITVATARTÁS LOGIKA ---
   bool isOpenNow(Map<String, dynamic>? hours) {
     if (hours == null) return false;
     
     DateTime now = DateTime.now();
-    int weekday = now.weekday; // 1 = Hétfő ... 7 = Vasárnap
+    int weekday = now.weekday;
     String? todayHours = hours[weekday.toString()];
 
     if (todayHours == null || todayHours == "Zárva") return false;
-    if (todayHours == "00:00-24:00") return true; // Non-stop
+    if (todayHours == "00:00-24:00") return true;
 
     try {
-      // Formátum feldolgozása: "06:00-22:00"
       List<String> parts = todayHours.split('-');
       List<String> startParts = parts[0].split(':');
       List<String> endParts = parts[1].split(':');
@@ -111,7 +109,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
       DateTime openTime = DateTime(now.year, now.month, now.day, int.parse(startParts[0]), int.parse(startParts[1]));
       DateTime closeTime = DateTime(now.year, now.month, now.day, int.parse(endParts[0]), int.parse(endParts[1]));
       
-      // Ha a zárás másnapra esik (pl. 02:00), hozzáadunk egy napot
       if (closeTime.isBefore(openTime)) {
          closeTime = closeTime.add(const Duration(days: 1));
       }
@@ -131,7 +128,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
               options: MapOptions(
                 initialCenter: mapCenter,
                 initialZoom: 15.0,
-                // Forgatás letiltása, csak zoom és húzás
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
                 ),
@@ -140,10 +136,8 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'hu.csakos.tobacco_finder',
-                  retinaMode: true, // Élesebb kép telefonon
+                  retinaMode: true,
                 ),
-                
-                // Saját pozíció (Kék)
                 if (myPosition != null)
                   MarkerLayer(
                     markers: [
@@ -155,8 +149,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                       ),
                     ],
                   ),
-
-                // Boltok (Piros)
                 MarkerLayer(
                   markers: shops.map((shop) {
                     return Marker(
@@ -165,7 +157,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                       height: 80,
                       child: GestureDetector(
                         onTap: () {
-                          // Itt hívjuk meg a részletes ablakot
                           _showShopDetails(context, shop);
                         },
                         child: const Icon(Icons.location_on, color: Colors.red, size: 40),
@@ -182,28 +173,26 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
     );
   }
 
-  // --- 4. RÉSZLETES INFORMÁCIÓ ABLAK (Bottom Sheet) ---
+  // --- 4. RÉSZLETES INFORMÁCIÓ ABLAK ---
   void _showShopDetails(BuildContext context, dynamic shop) {
-    // Távolság számítása
     String distanceText = "Ismeretlen";
     if (myPosition != null) {
       double dist = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(shop['lat'], shop['long']));
       distanceText = dist > 1000 ? "${(dist / 1000).toStringAsFixed(1)} km" : "${dist.round()} m";
     }
 
-    // Nyitvatartás ellenőrzése
     Map<String, dynamic>? openingHours = shop['openingHours'];
     bool isOpen = isOpenNow(openingHours);
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Engedi, hogy magasabbra nyíljon
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.6, // Képernyő 60%-áig nyílik fel
+          initialChildSize: 0.6,
           minChildSize: 0.4,
           maxChildSize: 0.95,
           expand: false,
@@ -214,7 +203,6 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- CÍM és STATUSZ ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -239,24 +227,21 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                   ),
                   const SizedBox(height: 10),
                   
-                  // --- INFÓK ---
                   Row(children: [const Icon(Icons.location_on, color: Colors.grey), const SizedBox(width: 8), Expanded(child: Text('${shop['city']}, ${shop['address']}'))]),
                   const SizedBox(height: 5),
                   Row(children: [const Icon(Icons.directions_walk, color: Colors.blue), const SizedBox(width: 8), Text("$distanceText tőled")]),
                   
                   const Divider(height: 30),
                   
-                  // --- HETI BONTÁS ---
                   const Text("Nyitvatartás", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   
                   if (openingHours != null)
                     ...List.generate(7, (index) {
-                      int dayIndex = index + 1; // 1 = Hétfő
+                      int dayIndex = index + 1;
                       String dayName = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][index];
                       String hours = openingHours[dayIndex.toString()] ?? "Zárva";
                       
-                      // Mai nap kiemelése
                       bool isToday = DateTime.now().weekday == dayIndex;
 
                       return Container(
@@ -276,12 +261,8 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                     })
                   else
                     const Text("Nincs adat a nyitvatartásról.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                    
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Bezárás")),
-                  ),
+                  
+                  // ITT VOLT A GOMB, MOST MÁR ÜRES
                 ],
               ),
             );
