@@ -16,6 +16,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Dohánybolt Kereső',
+      debugShowCheckedModeBanner: false, // Eltünteti a "DEBUG" szalagot a sarokból
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -35,11 +36,9 @@ class TobaccoMapPage extends StatefulWidget {
 class _TobaccoMapPageState extends State<TobaccoMapPage> {
   List<dynamic> shops = [];
   bool isLoading = true;
-  LatLng? myPosition; // Itt tároljuk a te pozíciódat (ha megvan)
-  final Distance distanceCalculator = const Distance(); // Távolság számoló
-
-  // Kezdőpont (Alapból Budapest, amíg nincs GPS jel)
-  LatLng mapCenter = const LatLng(47.50712, 19.04557);
+  LatLng? myPosition;
+  final Distance distanceCalculator = const Distance();
+  LatLng mapCenter = const LatLng(47.50712, 19.04557); // Alapból Budapest
 
   @override
   void initState() {
@@ -47,46 +46,36 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
     _initializeData();
   }
 
-  // Ez a fő indító függvény: Először GPS, aztán boltok letöltése
   Future<void> _initializeData() async {
-    await _determinePosition(); // Megpróbáljuk megszerezni a pozíciót
-    await fetchShops();         // Letöltjük a boltokat
+    await _determinePosition();
+    await fetchShops();
   }
 
-  // GPS pozíció lekérése (Hivatalos Flutter recept)
+  // --- 1. GPS POZÍCIÓ LEKÉRÉSE ---
   Future<void> _determinePosition() async {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 1. Megnézzük, be van-e kapcsolva a GPS
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      print('A helymeghatározás ki van kapcsolva.');
-      return;
-    }
+    if (!serviceEnabled) return;
 
-    // 2. Megnézzük, van-e engedélyünk az appnak
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        print('Az engedély megtagadva.');
-        return;
-      }
+      if (permission == LocationPermission.denied) return;
     }
 
-    // 3. Ha minden oké, lekérjük a pozíciót
     Position position = await Geolocator.getCurrentPosition();
-    
     setState(() {
       myPosition = LatLng(position.latitude, position.longitude);
-      mapCenter = myPosition!; // A térkép közepét is ide tesszük
+      mapCenter = myPosition!;
     });
-    print("Saját pozícióm: $myPosition");
   }
 
+  // --- 2. BOLTOK LETÖLTÉSE ---
   Future<void> fetchShops() async {
     try {
+      // Mivel van 'adb reverse', a localhost működik a telefonon is
       const String baseUrl = 'http://localhost:3000/shops';
       var response = await Dio().get(baseUrl);
       
@@ -102,31 +91,47 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
     }
   }
 
+  // --- 3. NYITVATARTÁS LOGIKA (NYITVA VAN-E MOST?) ---
+  bool isOpenNow(Map<String, dynamic>? hours) {
+    if (hours == null) return false;
+    
+    DateTime now = DateTime.now();
+    int weekday = now.weekday; // 1 = Hétfő ... 7 = Vasárnap
+    String? todayHours = hours[weekday.toString()];
+
+    if (todayHours == null || todayHours == "Zárva") return false;
+    if (todayHours == "00:00-24:00") return true; // Non-stop
+
+    try {
+      // Formátum feldolgozása: "06:00-22:00"
+      List<String> parts = todayHours.split('-');
+      List<String> startParts = parts[0].split(':');
+      List<String> endParts = parts[1].split(':');
+
+      DateTime openTime = DateTime(now.year, now.month, now.day, int.parse(startParts[0]), int.parse(startParts[1]));
+      DateTime closeTime = DateTime(now.year, now.month, now.day, int.parse(endParts[0]), int.parse(endParts[1]));
+      
+      // Ha a zárás másnapra esik (pl. 02:00), hozzáadunk egy napot
+      if (closeTime.isBefore(openTime)) {
+         closeTime = closeTime.add(const Duration(days: 1));
+      }
+
+      return now.isAfter(openTime) && now.isBefore(closeTime);
+    } catch (e) {
+      return false; 
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Térkép'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            onPressed: () {
-              // Gombnyomásra újra megkeressük magunkat
-              _determinePosition();
-            },
-          )
-        ],
-      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : FlutterMap(
               options: MapOptions(
                 initialCenter: mapCenter,
                 initialZoom: 15.0,
-                // 1. JAVÍTÁS: Forgatás tiltása
-                // Megmondjuk, hogy csak a 'drag' (húzás) és 'zoom' engedélyezett.
+                // Forgatás letiltása, csak zoom és húzás
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
                 ),
@@ -135,12 +140,10 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'hu.csakos.tobacco_finder',
-                  // 2. JAVÍTÁS: Élesebb kép (Retina mód)
-                  // Ez "tömöríti" a pixeleket, így nem lesz homályos a telefonon.
-                  retinaMode: true, 
+                  retinaMode: true, // Élesebb kép telefonon
                 ),
                 
-                // 1. Réteg: A saját pozícióm (Kék pötty)
+                // Saját pozíció (Kék)
                 if (myPosition != null)
                   MarkerLayer(
                     markers: [
@@ -148,110 +151,143 @@ class _TobaccoMapPageState extends State<TobaccoMapPage> {
                         point: myPosition!,
                         width: 60,
                         height: 60,
-                        child: const Icon(
-                          Icons.person_pin_circle,
-                          color: Colors.blue,
-                          size: 50,
-                        ),
+                        child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 50),
                       ),
                     ],
                   ),
 
-                // 2. Réteg: A boltok (Piros pöttyök)
+                // Boltok (Piros)
                 MarkerLayer(
                   markers: shops.map((shop) {
-                    double lat = shop['lat'];
-                    double long = shop['long'];
-                    LatLng shopLocation = LatLng(lat, long);
-
                     return Marker(
-                      point: shopLocation,
+                      point: LatLng(shop['lat'], shop['long']),
                       width: 80,
                       height: 80,
                       child: GestureDetector(
                         onTap: () {
-                          // Távolság számítás
-                          String distanceText = "Ismeretlen távolság";
-                          if (myPosition != null) {
-                            double distInMeters = distanceCalculator.as(LengthUnit.Meter, myPosition!, shopLocation);
-                            if (distInMeters > 1000) {
-                              distanceText = "${(distInMeters / 1000).toStringAsFixed(1)} km";
-                            } else {
-                              distanceText = "${distInMeters.round()} m";
-                            }
-                          }
-
-                          showModalBottomSheet(
-                            context: context,
-                            builder: (context) {
-                              return Container(
-                                padding: const EdgeInsets.all(16.0),
-                                height: 280,
-                                width: double.infinity,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      shop['name'],
-                                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.directions_walk, color: Colors.blue),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          "Távolság tőled: $distanceText",
-                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.map, color: Colors.grey),
-                                        const SizedBox(width: 8),
-                                        Text('${shop['city']}, ${shop['address']}'),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-
-                                    const Row(
-                                      children: [
-                                        Icon(Icons.access_time, color: Colors.green),
-                                        SizedBox(width: 8),
-                                        Text("Nyitvatartás: 06:00 - 22:00"),
-                                      ],
-                                    ),
-
-                                    const SizedBox(height: 20),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton.icon(
-                                        onPressed: () => Navigator.pop(context),
-                                        icon: const Icon(Icons.close),
-                                        label: const Text("Bezárás"),
-                                      ),
-                                    )
-                                  ],
-                                ),
-                              );
-                            },
-                          );
+                          // Itt hívjuk meg a részletes ablakot
+                          _showShopDetails(context, shop);
                         },
-                        child: const Icon(
-                          Icons.location_on,
-                          color: Colors.red,
-                          size: 40,
-                        ),
+                        child: const Icon(Icons.location_on, color: Colors.red, size: 40),
                       ),
                     );
                   }).toList(),
                 ),
               ],
             ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _determinePosition,
+        child: const Icon(Icons.my_location),
+      ),
+    );
+  }
+
+  // --- 4. RÉSZLETES INFORMÁCIÓ ABLAK (Bottom Sheet) ---
+  void _showShopDetails(BuildContext context, dynamic shop) {
+    // Távolság számítása
+    String distanceText = "Ismeretlen";
+    if (myPosition != null) {
+      double dist = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(shop['lat'], shop['long']));
+      distanceText = dist > 1000 ? "${(dist / 1000).toStringAsFixed(1)} km" : "${dist.round()} m";
+    }
+
+    // Nyitvatartás ellenőrzése
+    Map<String, dynamic>? openingHours = shop['openingHours'];
+    bool isOpen = isOpenNow(openingHours);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // Engedi, hogy magasabbra nyíljon
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6, // Képernyő 60%-áig nyílik fel
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // --- CÍM és STATUSZ ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          shop['name'], 
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isOpen ? Colors.green : Colors.red,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          isOpen ? "NYITVA" : "ZÁRVA",
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  
+                  // --- INFÓK ---
+                  Row(children: [const Icon(Icons.location_on, color: Colors.grey), const SizedBox(width: 8), Expanded(child: Text('${shop['city']}, ${shop['address']}'))]),
+                  const SizedBox(height: 5),
+                  Row(children: [const Icon(Icons.directions_walk, color: Colors.blue), const SizedBox(width: 8), Text("$distanceText tőled")]),
+                  
+                  const Divider(height: 30),
+                  
+                  // --- HETI BONTÁS ---
+                  const Text("Nyitvatartás", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  
+                  if (openingHours != null)
+                    ...List.generate(7, (index) {
+                      int dayIndex = index + 1; // 1 = Hétfő
+                      String dayName = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][index];
+                      String hours = openingHours[dayIndex.toString()] ?? "Zárva";
+                      
+                      // Mai nap kiemelése
+                      bool isToday = DateTime.now().weekday == dayIndex;
+
+                      return Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                        margin: const EdgeInsets.only(bottom: 4),
+                        decoration: isToday 
+                            ? BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.withOpacity(0.3))) 
+                            : null,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(dayName, style: TextStyle(fontWeight: isToday ? FontWeight.bold : FontWeight.normal)),
+                            Text(hours, style: TextStyle(fontWeight: isToday ? FontWeight.bold : FontWeight.normal)),
+                          ],
+                        ),
+                      );
+                    })
+                  else
+                    const Text("Nincs adat a nyitvatartásról.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+                    
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("Bezárás")),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
