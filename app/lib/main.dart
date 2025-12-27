@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/map_screen.dart';
+import 'screens/home_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -16,9 +16,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
+        // A hibás cardTheme részt eltávolítottuk, így az alapértelmezettet használja
       ),
-      // Itt hívjuk meg a különválasztott képernyőt
-      home: const MapScreen(),
+      home: const HomeScreen(),
     );
   }
 }
