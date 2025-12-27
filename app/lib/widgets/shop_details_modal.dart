@@ -12,7 +12,6 @@ class ShopDetailsModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Távolság számítás
     String distanceText = "Ismeretlen";
     if (myPosition != null) {
       double dist = distanceCalculator.as(
@@ -27,7 +26,7 @@ class ShopDetailsModal extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.55, // Kicsit kisebb indítás, hogy kényelmes legyen
+      initialChildSize: 0.60, // <--- FELJEBB VETTÜK (0.55 -> 0.60), TÖBB LÁTSZIK
       minChildSize: 0.4,
       maxChildSize: 0.95,
       expand: false,
@@ -35,22 +34,21 @@ class ShopDetailsModal extends StatelessWidget {
         return Container(
           decoration: BoxDecoration(
             color: colorScheme.surface,
-            // Material 3 szabvány: 28-as lekerekítés a felső sarkokon
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SingleChildScrollView(
             controller: scrollController,
-            // Nagyobb padding a széleken
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            // KISEBB PADDING (24 helyett 16 és 20)
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // --- 1. Drag Handle (A kis szürke csík) ---
+                // --- 1. Drag Handle ---
                 Center(
                   child: Container(
                     width: 32,
                     height: 4,
-                    margin: const EdgeInsets.only(bottom: 24),
+                    margin: const EdgeInsets.only(bottom: 16), // KISEBB HELY (24 -> 16)
                     decoration: BoxDecoration(
                       color: colorScheme.onSurfaceVariant.withOpacity(0.4),
                       borderRadius: BorderRadius.circular(2),
@@ -66,25 +64,25 @@ class ShopDetailsModal extends StatelessWidget {
                     Expanded(
                       child: Text(
                         shop.name,
-                        style: textTheme.headlineSmall?.copyWith(
+                        // KISEBB CÍM (HeadlineSmall -> TitleLarge)
+                        style: textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.onSurface,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // Ugyanaz a Chip dizájn, mint a listában
+                    const SizedBox(width: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), // KISEBB CHIP
                       decoration: BoxDecoration(
                         color: isOpen 
                             ? Colors.green.withOpacity(0.15) 
                             : colorScheme.errorContainer.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
                         isOpen ? "Nyitva" : "Zárva",
-                        style: textTheme.labelMedium?.copyWith(
+                        style: textTheme.labelSmall?.copyWith( // KISEBB BETŰ
                           color: isOpen ? Colors.green.shade800 : colorScheme.error,
                           fontWeight: FontWeight.bold,
                         ),
@@ -93,19 +91,19 @@ class ShopDetailsModal extends StatelessWidget {
                   ],
                 ),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 8), // KISEBB TÉRKÖZ (16 -> 8)
 
                 // --- 3. Cím információ ---
                 Row(
                   children: [
                     Icon(Icons.location_on_outlined, 
-                      color: colorScheme.primary, size: 20
+                      color: colorScheme.primary, size: 18 // KISEBB IKON
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '${shop.city}, ${shop.address}',
-                        style: textTheme.bodyLarge?.copyWith(
+                        style: textTheme.bodyMedium?.copyWith( // BodyLarge -> BodyMedium
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -113,51 +111,47 @@ class ShopDetailsModal extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
-                // --- 4. Távolság (Pasztell dobozban) ---
+                // --- 4. Távolság ---
                 if (distanceText != "Ismeretlen")
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: colorScheme.secondaryContainer.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondaryContainer.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.near_me_rounded, 
+                          size: 14, 
+                          color: colorScheme.onSecondaryContainer
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.near_me_rounded, 
-                              size: 16, 
-                              color: colorScheme.onSecondaryContainer
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "$distanceText tőled",
-                              style: textTheme.labelLarge?.copyWith(
-                                color: colorScheme.onSecondaryContainer,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 6),
+                        Text(
+                          "$distanceText tőled",
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colorScheme.onSecondaryContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
-                const SizedBox(height: 24),
-                Divider(color: colorScheme.outlineVariant, thickness: 1),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16), // KISEBB TÉRKÖZ (24 -> 16)
+                Divider(color: colorScheme.outlineVariant, thickness: 1, height: 1),
+                const SizedBox(height: 16),
 
                 // --- 5. Nyitvatartás lista ---
                 Text(
                   "Nyitvatartás",
-                  style: textTheme.titleLarge?.copyWith(
+                  style: textTheme.titleMedium?.copyWith( // TitleLarge -> TitleMedium
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8), // KISEBB TÉRKÖZ
 
                 if (shop.openingHours != null)
                   ...List.generate(7, (index) {
@@ -167,32 +161,31 @@ class ShopDetailsModal extends StatelessWidget {
                     ][index];
                     String hours = shop.openingHours![dayIndex.toString()] ?? "Zárva";
 
-                    // Mai nap kiemelése
                     bool isToday = DateTime.now().weekday == dayIndex;
 
                     return Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      margin: const EdgeInsets.only(bottom: 8),
+                      // SOKKAL VÉKONYABB SOROK (Vertical 12 -> 6)
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                      margin: const EdgeInsets.only(bottom: 4),
                       decoration: isToday
                           ? BoxDecoration(
-                              // A mai nap kap egy halvány színes hátteret
                               color: colorScheme.primaryContainer.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(8), // Kisebb kerekítés
                             )
-                          : null, // A többi napnak nincs háttere
+                          : null,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
                             dayName,
-                            style: textTheme.bodyLarge?.copyWith(
+                            style: textTheme.bodyMedium?.copyWith( // Kisebb betű
                               fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
                               color: isToday ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
                             ),
                           ),
                           Text(
                             hours,
-                            style: textTheme.bodyLarge?.copyWith(
+                            style: textTheme.bodyMedium?.copyWith(
                               fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
                               color: isToday ? colorScheme.primary : colorScheme.onSurface,
                             ),
@@ -208,13 +201,13 @@ class ShopDetailsModal extends StatelessWidget {
                       "Nincs adat a nyitvatartásról.",
                       style: TextStyle(
                         fontStyle: FontStyle.italic, 
-                        color: colorScheme.onSurfaceVariant
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 13, // Kisebb
                       ),
                     ),
                   ),
                   
-                // Extra térköz az alján
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
               ],
             ),
           ),
