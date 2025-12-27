@@ -3,7 +3,6 @@ import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
-// Importáljuk a két új widgetünket
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
 
@@ -23,7 +22,6 @@ class _HomeScreenState extends State<HomeScreen> {
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
   
-  // Ez tárolja, melyik fülön vagyunk (0: Térkép, 1: Lista)
   int _selectedIndex = 0;
 
   @override
@@ -33,6 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initializeData() async {
+    // Töltésjelző bekapcsolása frissítéskor
+    setState(() {
+      isLoading = true;
+    });
+
     final position = await _locationService.determinePosition();
     if (position != null) {
       setState(() {
@@ -48,8 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Fül váltáskor hívódik meg
-  void _onItemTapped(int index) {
+  void _onDestinationSelected(int index) {
     setState(() {
       _selectedIndex = index;
     });
@@ -57,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Kiválasztjuk, melyik widgetet mutassuk
     Widget currentView;
     if (_selectedIndex == 0) {
       currentView = TobaccoMap(
@@ -73,39 +74,47 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
+      // M3: Az AppBar átlátszóbb, nincs nagy árnyék
       appBar: AppBar(
-        title: const Text('Dohánybolt Kereső'),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 2,
-        shadowColor: Colors.black.withOpacity(0.2),
-        // Ha listán vagyunk, nem biztos, hogy kell a GPS gomb fent, de maradhat
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location, color: Colors.blue),
-            onPressed: _initializeData,
-          )
-        ],
+        title: const Text(
+          'Dohánybolt Kereső',
+          style: TextStyle(fontWeight: FontWeight.w600), // Vastagabb betű
+        ),
+        centerTitle: true, // Középre igazítva modernebb
+        forceMaterialTransparency: false,
+        scrolledUnderElevation: 4.0, // Ha görgetsz, finom árnyék jelenik meg
+        // KIVETTÜK A GOMBOT INNEN
       ),
+      
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : currentView, // Itt jelenik meg a Térkép vagy a Lista
+          : currentView,
       
-      // A Menü sáv alul
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
+      // M3: Visszakerült a jobb alsó sarokba a gomb!
+      // A Material 3-ban ez már 'szögletesebb' (lekerekített négyzet).
+      floatingActionButton: FloatingActionButton(
+        onPressed: _initializeData,
+        tooltip: 'Helymeghatározás',
+        child: const Icon(Icons.my_location),
+      ),
+
+      // M3: Ez a modern alsó menü (NavigationBar a BottomNavigationBar helyett)
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onDestinationSelected,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected, // Csak a kiválasztottnak van felirata (opcionális, de szép)
+        destinations: const <Widget>[
+          NavigationDestination(
+            selectedIcon: Icon(Icons.map),
+            icon: Icon(Icons.map_outlined),
             label: 'Térkép',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
+          NavigationDestination(
+            selectedIcon: Icon(Icons.view_list),
+            icon: Icon(Icons.view_list_outlined),
             label: 'Lista',
           ),
         ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.blue,
-        onTap: _onItemTapped,
       ),
     );
   }
