@@ -2,26 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
-import 'shop_details_modal.dart';
 
 class TobaccoMap extends StatelessWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
   final LatLng mapCenter;
-  final MapController mapController; // EZT ADTUK HOZZÁ
+  final MapController mapController;
+  // ÚJ: Callback függvény a marker kattintáshoz
+  final Function(Shop) onShopSelected;
 
   const TobaccoMap({
     super.key,
     required this.shops,
     required this.myPosition,
     required this.mapCenter,
-    required this.mapController, // ÉS EZT
+    required this.mapController,
+    required this.onShopSelected, // Kötelező
   });
 
   @override
   Widget build(BuildContext context) {
     return FlutterMap(
-      mapController: mapController, // BEKÖTJÜK A KONTROLLERT
+      mapController: mapController,
       options: MapOptions(
         initialCenter: mapCenter,
         initialZoom: 15.0,
@@ -35,7 +37,6 @@ class TobaccoMap extends StatelessWidget {
           userAgentPackageName: 'hu.csakos.tobacco_finder',
           retinaMode: true,
         ),
-        // Saját pozíció
         if (myPosition != null)
           MarkerLayer(
             markers: [
@@ -47,7 +48,6 @@ class TobaccoMap extends StatelessWidget {
               ),
             ],
           ),
-        // Boltok
         MarkerLayer(
           markers: shops.map((shop) {
             return Marker(
@@ -56,14 +56,8 @@ class TobaccoMap extends StatelessWidget {
               height: 80,
               child: GestureDetector(
                 onTap: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    builder: (context) => ShopDetailsModal(shop: shop, myPosition: myPosition),
-                  );
+                  // Szólunk a HomeScreen-nek, hogy erre a boltra nyomtak
+                  onShopSelected(shop);
                 },
                 child: const Icon(Icons.location_on, color: Colors.red, size: 40),
               ),

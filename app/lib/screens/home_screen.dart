@@ -6,6 +6,8 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
+// Most már a HomeScreen importálja a modalt, mert ő nyitja meg!
+import '../widgets/shop_details_modal.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,8 +16,6 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-// 1. JAVÍTÁS: 'SingleTicker...' helyett sima 'TickerProviderStateMixin'
-// Ez engedi, hogy többször is indítsunk animációt összeomlás nélkül.
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
@@ -50,32 +50,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  // 2. JAVÍTÁS: A Google Maps-szerű gyors működés
   Future<void> _handleLocationPress() async {
-    // A) Azonnal lekérjük az utolsó ismert helyet (ez cache-ből jön, nagyon gyors)
     final cachedPosition = await _locationService.getLastKnownPosition();
     
     if (cachedPosition != null) {
-      // Ha van cache, azonnal odahúzzuk a térképet
       _animatedMapMove(cachedPosition, 15.0);
       setState(() {
         myPosition = cachedPosition;
       });
     }
 
-    // B) A háttérben elindítjuk a pontos GPS bemérést
     final freshPosition = await _locationService.determinePosition();
     
     if (freshPosition != null) {
-      // Ha megvan a friss pont (és különbözik a régitől), akkor finomítunk
       setState(() {
         myPosition = freshPosition;
       });
+      // Csak akkor mozgassuk, ha még mindig térkép nézetben vagyunk
       if (_selectedIndex == 0) {
         _animatedMapMove(freshPosition, 15.0);
       }
     } else if (cachedPosition == null && mounted) {
-      // Ha se cache, se friss nincs (pl. pince), akkor szólunk
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
       );
@@ -83,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    // Biztonsági ellenőrzés: ha nincs felépülve a widget, ne animáljunk
     if (!mounted) return;
 
     final latTween = Tween<double>(
@@ -115,6 +109,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     controller.forward();
   }
 
+  // --- KÖZÖS METÓDUS A MODAL MEGNYITÁSÁRA ---
+  void _showShopDetails(Shop shop) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => ShopDetailsModal(shop: shop, myPosition: myPosition),
+    );
+  }
+
+  // --- EZT HÍVJUK A LISTÁBÓL ---
+  void _onShopSelectedFromList(Shop shop) {
+    // 1. Átváltunk a Térkép fülre
+    setState(() {
+      _selectedIndex = 0;
+    });
+
+    // 2. Odamozgatjuk a térképet a bolthoz
+    // (Pici késleltetés nem árt, hogy a térkép biztosan felépüljön, de FlutterMap-nél általában nem kell)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+       _animatedMapMove(LatLng(shop.lat, shop.long), 16.0); // Kicsit közelebbi zoom (16)
+       
+       // 3. Megnyitjuk az adatlapot
+       _showShopDetails(shop);
+    });
+  }
+
   void _onDestinationSelected(int index) {
     setState(() {
       _selectedIndex = index;
@@ -124,17 +147,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     Widget currentView;
+    
     if (_selectedIndex == 0) {
       currentView = TobaccoMap(
         shops: shops, 
         myPosition: myPosition, 
         mapCenter: mapCenter,
         mapController: _mapController,
+        onShopSelected: _showShopDetails, // Térképen simán csak nyitjuk
       );
     } else {
       currentView = ShopList(
         shops: shops, 
-        myPosition: myPosition
+        myPosition: myPosition,
+        onShopSelected: _onShopSelectedFromList, // Listából váltunk és nyitunk
       );
     }
 
@@ -152,11 +178,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ? const Center(child: CircularProgressIndicator())
           : currentView,
       
-      floatingActionButton: FloatingActionButton(
+      // ÚJ: Csak akkor látszik a gomb, ha a Térkép (0-s index) van kiválasztva
+      floatingActionButton: _selectedIndex == 0 ? FloatingActionButton(
         onPressed: _handleLocationPress,
         tooltip: 'Helymeghatározás',
         child: const Icon(Icons.my_location),
-      ),
+      ) : null,
 
       bottomNavigationBar: NavigationBar(
         height: 65,

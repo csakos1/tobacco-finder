@@ -1,30 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
-import '../utils/shop_logic.dart'; // Kell a nyitvatartás logikához
-import 'shop_details_modal.dart';
+import '../utils/shop_logic.dart';
 
 class ShopList extends StatelessWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
   final Distance distanceCalculator = const Distance();
+  // ÚJ: Ez a függvény hívódik meg, ha rákattintasz egy elemre
+  final Function(Shop) onShopSelected;
 
   ShopList({
     super.key,
     required this.shops,
     required this.myPosition,
+    required this.onShopSelected, // Kötelezővé tesszük
   });
 
   @override
   Widget build(BuildContext context) {
-    // 1. RENDEZÉS: Lemásoljuk a listát, és sorba rendezzük távolság szerint
     List<Shop> sortedShops = List.from(shops);
     
     if (myPosition != null) {
       sortedShops.sort((a, b) {
         double distA = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(a.lat, a.long));
         double distB = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(b.lat, b.long));
-        return distA.compareTo(distB); // Növekvő sorrend
+        return distA.compareTo(distB);
       });
     }
 
@@ -39,7 +40,6 @@ class ShopList extends StatelessWidget {
         final shop = sortedShops[index];
         bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
-        // Távolság szöveg
         String distanceText = "";
         if (myPosition != null) {
           double dist = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(shop.lat, shop.long));
@@ -55,17 +55,9 @@ class ShopList extends StatelessWidget {
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             onTap: () {
-              // Ugyanazt a részletes ablakot hívjuk meg, mint a térképen!
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                builder: (context) => ShopDetailsModal(shop: shop, myPosition: myPosition),
-              );
+              // Itt nem nyitunk ablakot, csak szólunk a HomeScreen-nek!
+              onShopSelected(shop);
             },
-            // Ikon a bal oldalon
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -74,12 +66,10 @@ class ShopList extends StatelessWidget {
               ),
               child: Icon(Icons.store, color: Colors.blue[700]),
             ),
-            // Bolt neve
             title: Text(
               shop.name,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            // Cím és távolság
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -96,7 +86,6 @@ class ShopList extends StatelessWidget {
                   )
               ],
             ),
-            // NYITVA / ZÁRVA jelvény a jobb oldalon
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
