@@ -168,10 +168,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       appBar: AppBar(
         title: const Text(
           'Dohánybolt Kereső',
-          style: TextStyle(fontWeight: FontWeight.w600),
+          style: TextStyle(
+            fontWeight: FontWeight.bold, 
+            fontSize: 22, // Kicsit nagyobb méret
+          ),
         ),
-        centerTitle: true,
-        scrolledUnderElevation: 4.0,
+        centerTitle: false, // BALRA IGAZÍTÁS
+        scrolledUnderElevation: 4.0, // Finom színváltás görgetéskor
+        backgroundColor: Theme.of(context).colorScheme.surface, // Alap háttérszín
       ),
       
       body: isLoading
