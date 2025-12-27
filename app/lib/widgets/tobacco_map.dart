@@ -8,17 +8,20 @@ class TobaccoMap extends StatelessWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
   final LatLng mapCenter;
+  final MapController mapController; // EZT ADTUK HOZZÁ
 
   const TobaccoMap({
     super.key,
     required this.shops,
     required this.myPosition,
     required this.mapCenter,
+    required this.mapController, // ÉS EZT
   });
 
   @override
   Widget build(BuildContext context) {
     return FlutterMap(
+      mapController: mapController, // BEKÖTJÜK A KONTROLLERT
       options: MapOptions(
         initialCenter: mapCenter,
         initialZoom: 15.0,
