@@ -18,7 +18,7 @@ class ShopList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rendezés
+    // Rendezés logika marad a régi
     List<Shop> sortedShops = List.from(shops);
     if (myPosition != null) {
       sortedShops.sort((a, b) {
@@ -37,7 +37,6 @@ class ShopList extends StatelessWidget {
 
     return ListView.builder(
       itemCount: sortedShops.length,
-      // Nagyobb térköz a lista körül
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       itemBuilder: (context, index) {
         final shop = sortedShops[index];
@@ -51,12 +50,11 @@ class ShopList extends StatelessWidget {
               : "${dist.round()} m";
         }
 
-        // --- MATERIAL 3 KÁRTYA DIZÁJN ---
         return Card(
-          elevation: 0, // Nincs árnyék (Filled Card)
-          color: colorScheme.surfaceContainer, // Halvány háttérszín
-          margin: const EdgeInsets.only(bottom: 12), // Kártyák közti tér
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), // Kerekített sarkok
+          elevation: 0,
+          color: colorScheme.surfaceContainer, // A kártya alapja
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => onShopSelected(shop),
@@ -66,23 +64,23 @@ class ShopList extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // 1. Ikon (Tonal containerben)
+                  // --- 1. Ikon ---
                   Container(
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer, // Halványkék háttér
+                      color: colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.store_rounded, 
-                      color: colorScheme.onPrimaryContainer, // Sötétkék ikon
+                      color: colorScheme.onPrimaryContainer,
                       size: 24,
                     ),
                   ),
                   const SizedBox(width: 16),
                   
-                  // 2. Szöveges tartalom
+                  // --- 2. Középső Tartalom ---
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,31 +97,35 @@ class ShopList extends StatelessWidget {
                         Text(
                           "${shop.city}, ${shop.address}",
                           style: textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant, // Halványabb szürke
+                            color: colorScheme.onSurfaceVariant,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 8),
                         
-                        // Távolság "Badge" (kis keretes doboz)
+                        // --- TÁVOLSÁG JELÖLŐ (JAVÍTVA) ---
                         if (distanceText.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: colorScheme.surface, // Kontraszt a kártyához képest
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: colorScheme.outlineVariant, width: 0.5),
+                              // Most már nincs keret, hanem egy finom háttérszín van
+                              color: colorScheme.secondaryContainer.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.directions_walk, size: 12, color: colorScheme.primary),
-                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.near_me_rounded, // Jobb ikon a sétáló embernél
+                                  size: 14, 
+                                  color: colorScheme.onSecondaryContainer
+                                ),
+                                const SizedBox(width: 6),
                                 Text(
                                   distanceText,
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colorScheme.primary,
+                                  style: textTheme.labelMedium?.copyWith(
+                                    color: colorScheme.onSecondaryContainer,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -136,23 +138,20 @@ class ShopList extends StatelessWidget {
                   
                   const SizedBox(width: 8),
 
-                  // 3. Státusz Chip (Nyitva/Zárva)
+                  // --- 3. Státusz Chip (JAVÍTVA) ---
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      // Ha nyitva: halványzöld, Ha zárva: halványpiros (errorContainer)
+                      // Zöld vagy Piros háttér
                       color: isOpen 
                           ? Colors.green.withOpacity(0.15) 
                           : colorScheme.errorContainer.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(20), // Kapszula forma
-                      border: Border.all(
-                        color: isOpen ? Colors.transparent : colorScheme.error.withOpacity(0.2)
-                      )
+                      borderRadius: BorderRadius.circular(20),
+                      // KERET ELTÁVOLÍTVA MINDEN ESETBEN
                     ),
                     child: Text(
                       isOpen ? "Nyitva" : "Zárva",
                       style: textTheme.labelSmall?.copyWith(
-                        // Szöveg színe: sötétzöld vagy piros
                         color: isOpen ? Colors.green.shade800 : colorScheme.error,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.5,
