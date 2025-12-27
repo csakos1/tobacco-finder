@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart'; // Kell a MapController miatt
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../services/api_service.dart';
@@ -14,16 +14,15 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-// A 'SingleTickerProviderStateMixin' kell a sima animációhoz!
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+// 1. JAVÍTÁS: 'SingleTicker...' helyett sima 'TickerProviderStateMixin'
+// Ez engedi, hogy többször is indítsunk animációt összeomlás nélkül.
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
-  
-  // Ezzel irányítjuk a térképet
   final MapController _mapController = MapController();
 
   List<Shop> shops = [];
-  bool isLoading = true; // Csak indításkor töltünk
+  bool isLoading = true;
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
   
@@ -35,7 +34,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _firstLoad();
   }
 
-  // Ez csak az APP INDÍTÁSAKOR fut le (itt még lehet töltőképernyő)
   Future<void> _firstLoad() async {
     final position = await _locationService.determinePosition();
     if (position != null) {
@@ -52,36 +50,42 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
-  // Ez fut le, amikor rányomsz a gombra (NINCS töltőképernyő!)
+  // 2. JAVÍTÁS: A Google Maps-szerű gyors működés
   Future<void> _handleLocationPress() async {
-    // Nem állítjuk az isLoading-et true-ra!
+    // A) Azonnal lekérjük az utolsó ismert helyet (ez cache-ből jön, nagyon gyors)
+    final cachedPosition = await _locationService.getLastKnownPosition();
     
-    // 1. Megpróbáljuk lekérni a pozíciót
-    final position = await _locationService.determinePosition();
-    
-    if (position != null) {
+    if (cachedPosition != null) {
+      // Ha van cache, azonnal odahúzzuk a térképet
+      _animatedMapMove(cachedPosition, 15.0);
       setState(() {
-        myPosition = position;
-        // Nem állítjuk át a mapCentert közvetlenül, mert az ugrást okozna
+        myPosition = cachedPosition;
       });
+    }
 
-      // 2. Ha Térkép nézetben vagyunk, animálva odahúzzuk
+    // B) A háttérben elindítjuk a pontos GPS bemérést
+    final freshPosition = await _locationService.determinePosition();
+    
+    if (freshPosition != null) {
+      // Ha megvan a friss pont (és különbözik a régitől), akkor finomítunk
+      setState(() {
+        myPosition = freshPosition;
+      });
       if (_selectedIndex == 0) {
-        _animatedMapMove(position, 15.0);
+        _animatedMapMove(freshPosition, 15.0);
       }
-    } else {
-      // Opcionális: Dobhatsz egy kis üzenetet (SnackBar), ha nincs GPS
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
-        );
-      }
+    } else if (cachedPosition == null && mounted) {
+      // Ha se cache, se friss nincs (pl. pince), akkor szólunk
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
+      );
     }
   }
 
-  // Ez a segédfüggvény végzi a "húzós" animációt
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    // Létrehozunk egy animációt a jelenlegi és a célpont között
+    // Biztonsági ellenőrzés: ha nincs felépülve a widget, ne animáljunk
+    if (!mounted) return;
+
     final latTween = Tween<double>(
         begin: _mapController.camera.center.latitude, end: destLocation.latitude);
     final lngTween = Tween<double>(
@@ -89,13 +93,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final zoomTween = Tween<double>(
         begin: _mapController.camera.zoom, end: destZoom);
 
-    // Az animáció vezérlője
     final controller = AnimationController(
-        duration: const Duration(milliseconds: 1000), // 1 másodperc alatt húzza oda
-        vsync: this); // Ezért kellett a Mixin az osztály definíciónál
+        duration: const Duration(milliseconds: 1000),
+        vsync: this);
 
     final Animation<double> animation = CurvedAnimation(
-        parent: controller, curve: Curves.fastOutSlowIn); // Szép gyorsuló-lassuló mozgás
+        parent: controller, curve: Curves.fastOutSlowIn);
 
     controller.addListener(() {
       _mapController.move(
@@ -126,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         shops: shops, 
         myPosition: myPosition, 
         mapCenter: mapCenter,
-        mapController: _mapController, // Átadjuk a kontrollert
+        mapController: _mapController,
       );
     } else {
       currentView = ShopList(
@@ -150,13 +153,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           : currentView,
       
       floatingActionButton: FloatingActionButton(
-        onPressed: _handleLocationPress, // Az új, nem blokkoló függvény
+        onPressed: _handleLocationPress,
         tooltip: 'Helymeghatározás',
         child: const Icon(Icons.my_location),
       ),
 
       bottomNavigationBar: NavigationBar(
-        height: 65, // <--- ITT CSÖKKENTETTÜK A MAGASSÁGOT (Standard: 80)
+        height: 65,
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onDestinationSelected,
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
