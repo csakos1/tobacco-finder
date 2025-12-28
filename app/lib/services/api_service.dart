@@ -1,9 +1,10 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart'; // Kell a compute-hoz
 import '../models/shop.dart';
 
 class ApiService {
   final Dio _dio = Dio();
-  // Mivel van 'adb reverse', a localhost működik
+  // Android Emulatorhoz: 10.0.2.2, Fizikai eszközhöz (adb reverse): localhost
   final String _baseUrl = 'http://localhost:3000/shops';
 
   Future<List<Shop>> fetchShops() async {
@@ -11,15 +12,20 @@ class ApiService {
       final response = await _dio.get(_baseUrl);
       
       if (response.statusCode == 200) {
-        List<dynamic> data = response.data;
-        // Átalakítjuk a JSON listát Shop objektumok listájává
-        return data.map((json) => Shop.fromJson(json)).toList();
+        // A JSON feldolgozást kiszervezzük egy külön izolált szálra
+        return await compute(_parseShops, response.data);
       } else {
         throw Exception('Hiba a betöltéskor');
       }
     } catch (e) {
       print("API Hiba: $e");
-      return []; // Hiba esetén üres listát adunk vissza
+      return [];
     }
+  }
+
+  // Ez a függvény fut a háttérben (top-level vagy static kell legyen)
+  static List<Shop> _parseShops(dynamic responseBody) {
+    final List<dynamic> data = responseBody;
+    return data.map((json) => Shop.fromJson(json)).toList();
   }
 }

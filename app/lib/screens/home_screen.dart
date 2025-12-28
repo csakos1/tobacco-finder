@@ -34,6 +34,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _firstLoad();
   }
 
+  // --- ÚJ RENDEZŐ FÜGGVÉNY ---
+  void _sortShopsByDistance() {
+    if (myPosition == null) return;
+    
+    const Distance distance = Distance();
+    
+    shops.sort((a, b) {
+      final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat, a.long));
+      final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat, b.long));
+      return distA.compareTo(distB);
+    });
+  }
+
   Future<void> _firstLoad() async {
     final position = await _locationService.determinePosition();
     if (position != null) {
@@ -44,8 +57,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
 
     final fetchedShops = await _apiService.fetchShops();
+    
+    // Módosítás: Először hozzárendeljük, majd ha van pozíció, rendezzük
+    shops = fetchedShops;
+    if (myPosition != null) {
+      _sortShopsByDistance();
+    }
+
     setState(() {
-      shops = fetchedShops;
       isLoading = false;
     });
   }
@@ -57,6 +76,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _animatedMapMove(cachedPosition, 15.0);
       setState(() {
         myPosition = cachedPosition;
+        // Ha van cache-elt pozíció, ahhoz is rendezhetünk gyorsan egyet
+        _sortShopsByDistance();
       });
     }
 
@@ -65,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (freshPosition != null) {
       setState(() {
         myPosition = freshPosition;
+        _sortShopsByDistance(); // <--- Itt rendezzük újra a listát a friss pozícióhoz!
       });
       // Csak akkor mozgassuk, ha még mindig térkép nézetben vagyunk
       if (_selectedIndex == 0) {
