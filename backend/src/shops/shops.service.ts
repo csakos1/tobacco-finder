@@ -7,32 +7,39 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ShopsService {
   constructor(private prisma: PrismaService) {}
 
-  // 1. Új bolt létrehozása (PostGIS Raw SQL-lel)
-  async create(createShopDto: CreateShopDto) {
-    const { name, address, city, lat, long } = createShopDto;
+  // 1. Bolt létrehozása (JAVÍTVA: ID generálással!)
+  async create(createShopDto: any) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { name, city, address, lat, long, openingHours } = createShopDto;
 
-    // Mivel a koordinátákat speciális formátumban kell menteni,
-    // itt muszáj "nyers" SQL-t használnunk a Prisma helyett.
-    // Fontos: A PostGIS-nél a sorrend (LONGITUDE, LATITUDE)!
-
+    // VÁLTOZÁS:
+    // 1. Beírtuk az 'id'-t az oszlopok közé.
+    // 2. Beírtuk a 'gen_random_uuid()'-t az értékek közé.
     await this.prisma.$executeRaw`
-      INSERT INTO "tobacco_shops" ("id", "name", "address", "city", "location", "updated_at")
-      VALUES (
-        gen_random_uuid(), 
-        ${name}, 
-        ${address}, 
-        ${city}, 
-        ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326), 
-        NOW()
-      )
+      INSERT INTO "tobacco_shops" (id, name, city, address, opening_hours, location)
+      VALUES (gen_random_uuid(), ${name}, ${city}, ${address}, ${openingHours}, ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326))
     `;
 
-    return { message: 'Bolt sikeresen hozzáadva az adatbázishoz!' };
+    return 'Bolt sikeresen hozzáadva!';
   }
 
-  // 2. Az összes bolt lekérése
-  findAll() {
-    return this.prisma.tobaccoShop.findMany();
+  // 2. Az összes bolt lekérése (Koordinátákkal együtt!)
+  // 2. Az összes bolt lekérése (Koordinátákkal és Nyitvatartással)
+  async findAll() {
+    // FONTOS VÁLTOZÁS:
+    // Mivel a schema.prisma-ban @map("opening_hours") van, 
+    // az adatbázisban 'opening_hours' a neve.
+    // Ezt átnevezzük (AS) "openingHours"-ra, hogy a Frontend értse.
+
+    const shops = await this.prisma.$queryRaw`
+      SELECT id, name, address, city, 
+      opening_hours as "openingHours", 
+      ST_Y(location::geometry) as lat, 
+      ST_X(location::geometry) as long 
+      FROM "tobacco_shops"
+    `;
+
+    return shops;
   }
 
   // --- Ezeket a függvényeket egyelőre békén hagyjuk (később töltjük ki) ---
