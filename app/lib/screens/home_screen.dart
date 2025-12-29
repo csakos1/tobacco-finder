@@ -41,8 +41,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     const Distance distance = Distance();
     
     shops.sort((a, b) {
-      final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat, a.long));
-      final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat, b.long));
+      // Ha 'a'-nak nincs koordinátája, sorolja hátra
+      if (a.lat == null || a.long == null) return 1;
+      // Ha 'b'-nek nincs, sorolja 'b'-t hátra
+      if (b.lat == null || b.long == null) return -1;
+
+      // Ha mindkettőnek van, mehet a matek
+      final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat!, a.long!));
+      final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat!, b.long!));
       return distA.compareTo(distB);
     });
   }
@@ -145,19 +151,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // --- EZT HÍVJUK A LISTÁBÓL ---
   void _onShopSelectedFromList(Shop shop) {
-    // 1. Átváltunk a Térkép fülre
-    setState(() {
-      _selectedIndex = 0;
-    });
+    // Csak akkor váltunk térképre, ha VAN hova odamozogni
+    if (shop.lat != null && shop.long != null) {
+      setState(() {
+        _selectedIndex = 0;
+      });
 
-    // 2. Odamozgatjuk a térképet a bolthoz
-    // (Pici késleltetés nem árt, hogy a térkép biztosan felépüljön, de FlutterMap-nél általában nem kell)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-       _animatedMapMove(LatLng(shop.lat, shop.long), 16.0); // Kicsit közelebbi zoom (16)
-       
-       // 3. Megnyitjuk az adatlapot
-       _showShopDetails(shop);
-    });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+         _animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
+         _showShopDetails(shop);
+      });
+    } else {
+      // Ha nincs térkép adat, csak a részleteket mutatjuk
+      _showShopDetails(shop);
+    }
   }
 
   void _onDestinationSelected(int index) {

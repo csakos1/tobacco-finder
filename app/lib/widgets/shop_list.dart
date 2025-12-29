@@ -18,12 +18,18 @@ class ShopList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rendezés logika marad a régi
+    // 1. Rendezés logika (JAVÍTVA: kezeli a null koordinátákat)
     List<Shop> sortedShops = List.from(shops);
+    
     if (myPosition != null) {
       sortedShops.sort((a, b) {
-        double distA = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(a.lat, a.long));
-        double distB = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(b.lat, b.long));
+        // Ha nincs koordináta, sorolja a végére
+        if (a.lat == null || a.long == null) return 1;
+        if (b.lat == null || b.long == null) return -1;
+
+        // Ha mindkettőnek van, mehet a matek
+        double distA = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(a.lat!, a.long!));
+        double distB = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(b.lat!, b.long!));
         return distA.compareTo(distB);
       });
     }
@@ -42,9 +48,12 @@ class ShopList extends StatelessWidget {
         final shop = sortedShops[index];
         bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
+        // 2. Távolság kiírás (EZT KERESTED: JAVÍTVA)
         String distanceText = "";
-        if (myPosition != null) {
-          double dist = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(shop.lat, shop.long));
+        
+        // Csak akkor számolunk, ha a usernek és a boltnak is van pozíciója
+        if (myPosition != null && shop.lat != null && shop.long != null) {
+          double dist = distanceCalculator.as(LengthUnit.Meter, myPosition!, LatLng(shop.lat!, shop.long!));
           distanceText = dist > 1000 
               ? "${(dist / 1000).toStringAsFixed(1)} km" 
               : "${dist.round()} m";
@@ -52,7 +61,7 @@ class ShopList extends StatelessWidget {
 
         return Card(
           elevation: 0,
-          color: colorScheme.surfaceContainer, // A kártya alapja
+          color: colorScheme.surfaceContainer,
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           clipBehavior: Clip.antiAlias,
@@ -64,7 +73,6 @@ class ShopList extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // --- 1. Ikon ---
                   Container(
                     width: 48,
                     height: 48,
@@ -80,7 +88,6 @@ class ShopList extends StatelessWidget {
                   ),
                   const SizedBox(width: 16),
                   
-                  // --- 2. Középső Tartalom ---
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,12 +111,11 @@ class ShopList extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         
-                        // --- TÁVOLSÁG JELÖLŐ (JAVÍTVA) ---
+                        // TÁVOLSÁG JELÖLŐ (Csak ha van distanceText)
                         if (distanceText.isNotEmpty)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              // Most már nincs keret, hanem egy finom háttérszín van
                               color: colorScheme.secondaryContainer.withOpacity(0.5),
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -117,7 +123,7 @@ class ShopList extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.near_me_rounded, // Jobb ikon a sétáló embernél
+                                  Icons.near_me_rounded,
                                   size: 14, 
                                   color: colorScheme.onSecondaryContainer
                                 ),
@@ -138,16 +144,13 @@ class ShopList extends StatelessWidget {
                   
                   const SizedBox(width: 8),
 
-                  // --- 3. Státusz Chip (JAVÍTVA) ---
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      // Zöld vagy Piros háttér
                       color: isOpen 
                           ? Colors.green.withOpacity(0.15) 
                           : colorScheme.errorContainer.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(20),
-                      // KERET ELTÁVOLÍTVA MINDEN ESETBEN
                     ),
                     child: Text(
                       isOpen ? "Nyitva" : "Zárva",

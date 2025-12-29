@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // FONTOS IMPORT
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // Ne felejtsd el a clustert!
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
@@ -25,11 +25,14 @@ class TobaccoMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // 1. SZŰRÉS: Csak a koordinátával rendelkező boltok kellenek
+    final validShops = shops.where((s) => s.lat != null && s.long != null).toList();
+
     return FlutterMap(
       mapController: mapController,
       options: MapOptions(
         initialCenter: mapCenter,
-        initialZoom: 15.0, // Lehet kicsit kijjebb zoomolni alapból, pl 13.0
+        initialZoom: 15.0,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
         ),
@@ -41,24 +44,23 @@ class TobaccoMap extends StatelessWidget {
           retinaMode: true,
         ),
 
-        // --- 1. CLUSTERING RÉTEG (A sima MarkerLayer HELYETT) ---
+        // CLUSTERING HASZNÁLATA (A korábbi javaslat alapján)
         MarkerClusterLayerWidget(
           options: MarkerClusterLayerOptions(
-            maxClusterRadius: 45, // Minél nagyobb, annál agresszívebben csoportosít
+            maxClusterRadius: 45,
             size: const Size(40, 40),
             alignment: Alignment.center,
             padding: const EdgeInsets.all(50),
-            maxZoom: 15, // Ezen a zoom szinten és felette szétbontja a csoportokat
+            maxZoom: 15,
             
-            // A markerek listája (ugyanaz a logika, mint eddig)
-            markers: shops.map((shop) {
-               // Ideális esetben ezt a logikát kiszervezheted, hogy ne itt fusson minden rendereléskor
-               // de a clustering miatt ez már nem lesz olyan lassú.
+            // Itt a validShops-ot használjuk!
+            markers: validShops.map((shop) {
                bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
                const double iconSize = 42.0;
 
                return Marker(
-                point: LatLng(shop.lat, shop.long),
+                // Itt már biztosak vagyunk, hogy nem null, használhatjuk a ! jelet
+                point: LatLng(shop.lat!, shop.long!),
                 width: iconSize,
                 height: iconSize,
                 alignment: Alignment.topCenter,
@@ -86,7 +88,6 @@ class TobaccoMap extends StatelessWidget {
               );
             }).toList(),
             
-            // Így nézzen ki maga a Cluster (a csoportosító kör)
             builder: (context, markers) {
               return Container(
                 decoration: BoxDecoration(
@@ -94,10 +95,7 @@ class TobaccoMap extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 5,
-                    )
+                    BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 5)
                   ]
                 ),
                 alignment: Alignment.center,
@@ -110,7 +108,6 @@ class TobaccoMap extends StatelessWidget {
           ),
         ),
 
-        // --- 2. SAJÁT POZÍCIÓ (Marad a rétegek tetején) ---
         if (myPosition != null)
           MarkerLayer(
             markers: [
