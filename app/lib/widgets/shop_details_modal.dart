@@ -30,7 +30,7 @@ class ShopDetailsModal extends StatelessWidget {
     bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 30), // Kicsit nagyobb padding
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,10 +83,14 @@ class ShopDetailsModal extends StatelessWidget {
           
           const SizedBox(height: 8),
           
-          // Cím sor
+          // Cím sor - JAVÍTVA: Material 3 Pin ikon
           Row(
             children: [
-              Icon(Icons.map_outlined, size: 20, color: colorScheme.secondary),
+              Icon(
+                Icons.location_on_outlined, // Ez a klasszikus "Pin" ikon
+                size: 20, 
+                color: colorScheme.secondary
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -103,7 +107,7 @@ class ShopDetailsModal extends StatelessWidget {
           const Divider(height: 1),
           const SizedBox(height: 16),
 
-          // Nyitvatartás Fejléc
+          // Nyitvatartás Fejléc + Státusz jelző
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -111,33 +115,26 @@ class ShopDetailsModal extends StatelessWidget {
                 "Nyitvatartás", 
                 style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)
               ),
+              
+              // JAVÍTVA: Kapszula stílus, egyezik a listanézettel
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: isOpen ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isOpen ? Colors.green.shade200 : Colors.red.shade200,
-                  ),
+                  // Ugyanaz a háttérszín logika, mint a listában
+                  color: isOpen 
+                      ? Colors.green.withOpacity(0.15) 
+                      : colorScheme.errorContainer.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(20), // Kerekebb, "kapszula" forma
+                  // Keret eltávolítva
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isOpen ? Icons.check_circle_outline : Icons.schedule,
-                      size: 14,
-                      color: isOpen ? Colors.green.shade700 : Colors.red.shade700,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isOpen ? "NYITVA" : "ZÁRVA",
-                      style: TextStyle(
-                        color: isOpen ? Colors.green.shade800 : Colors.red.shade800,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  isOpen ? "Nyitva" : "Zárva", // Kisbetűs, mint a listában
+                  style: textTheme.labelSmall?.copyWith(
+                    // Ugyanaz a betűszín logika
+                    color: isOpen ? Colors.green.shade800 : colorScheme.error,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ],
@@ -170,26 +167,22 @@ class ShopDetailsModal extends StatelessWidget {
     return List.generate(7, (index) {
       final key = (index + 1).toString();
       
-      // Tisztítás: Ha null vagy üres, akkor "Zárva"
       String timeRange = hours[key]?.toString() ?? "Zárva";
       
-      // Ha a scraper nem tudta parse-olni és nyers string maradt (pl "Mo-Su..."),
-      // akkor próbáljuk meg szépen kiírni, vagy vágni.
       if (timeRange.length > 20 && timeRange.contains(';')) {
-         timeRange = "Lásd fent"; // Vagy egyedi logika
+         timeRange = "Lásd fent"; 
       }
 
       final isToday = index == todayIndex;
 
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8), // Térköz a sorok között
+        padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
               days[index], 
               style: TextStyle(
-                // Mai nap vastag és színes
                 fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
                 color: isToday ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                 fontSize: 15,

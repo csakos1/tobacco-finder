@@ -71,7 +71,7 @@ class TobaccoMap extends StatelessWidget {
                     children: [
                       Icon(Icons.location_on, color: colorScheme.primary, size: iconSize),
                       Positioned(
-                        top: 8.5,
+                        top: 10,
                         child: Container(
                           width: 12,
                           height: 12,
