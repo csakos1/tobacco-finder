@@ -1,11 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'; // Kell a compute-hoz
 import '../models/shop.dart';
+import '../config.dart';
 
 class ApiService {
   final Dio _dio = Dio();
   // Android Emulatorhoz: 10.0.2.2, Fizikai eszközhöz (adb reverse): localhost
-  final String _baseUrl = 'http://localhost:3000/shops';
+  //inal String _baseUrl = 'http://localhost:3000/shops';
+  final String _baseUrl = Config.apiUrl;
 
   Future<List<Shop>> fetchShops() async {
     try {
