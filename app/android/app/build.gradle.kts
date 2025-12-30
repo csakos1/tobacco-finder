@@ -5,6 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(java.io.FileInputStream(localPropertiesFile))
+}
+
 android {
     namespace = "hu.csakos.tobacco_finder.app"
     compileSdk = flutter.compileSdkVersion
@@ -28,6 +34,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["googleMapsKey"] = (localProperties.getProperty("google.maps.key") ?: "")
     }
 
     buildTypes {
