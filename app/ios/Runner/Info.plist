@@ -41,6 +41,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Az alkalmazásnak szüksége van a tartózkodási helyére, hogy megmutassa a legközelebbi dohányboltokat a térképen.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Az alkalmazásnak szüksége van a tartózkodási helyére, hogy megmutassa a legközelebbi dohányboltokat a térképen.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
