@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps; // Google Maps típusok
-import 'package:latlong2/latlong.dart'; // Számításokhoz marad a latlong2
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
@@ -19,11 +19,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
   
-  // A régi MapController törölve lett, mert a Google Maps máshogy működik
+  // Google Map Controller referenciája
+  gmaps.GoogleMapController? _mapController;
 
   List<Shop> shops = [];
   bool isLoading = true;
-  LatLng? myPosition; // Ez marad latlong2 típusú a távolságszámítás miatt
+  LatLng? myPosition;
   
   int _selectedIndex = 0;
 
@@ -33,16 +34,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _firstLoad();
   }
 
-  // Távolság alapú rendezés (latlong2-t használ)
   void _sortShopsByDistance() {
     if (myPosition == null) return;
-    
     const Distance distance = Distance();
-    
     shops.sort((a, b) {
       if (a.lat == null || a.long == null) return 1;
       if (b.lat == null || b.long == null) return -1;
-
       final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat!, a.long!));
       final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat!, b.long!));
       return distA.compareTo(distB);
@@ -56,42 +53,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         myPosition = position;
       });
     }
-
     final fetchedShops = await _apiService.fetchShops();
-    
     shops = fetchedShops;
     if (myPosition != null) {
       _sortShopsByDistance();
     }
-
     setState(() {
       isLoading = false;
     });
   }
 
   Future<void> _handleLocationPress() async {
-    final cachedPosition = await _locationService.getLastKnownPosition();
+    final position = await _locationService.determinePosition();
     
-    if (cachedPosition != null) {
+    if (position != null) {
       setState(() {
-        myPosition = cachedPosition;
+        myPosition = position;
         _sortShopsByDistance();
       });
-    }
 
-    final freshPosition = await _locationService.determinePosition();
-    
-    if (freshPosition != null) {
-      setState(() {
-        myPosition = freshPosition;
-        _sortShopsByDistance(); 
-      });
-      // A TobaccoMap widget figyeli a userLocation változását (didUpdateWidget),
-      // így automatikusan odamozgatja a kamerát, nem kell manuális vezérlés.
-    } else if (cachedPosition == null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
-      );
+      if (_mapController != null) {
+        _mapController!.animateCamera(
+          gmaps.CameraUpdate.newLatLngZoom(
+            gmaps.LatLng(position.latitude, position.longitude), 
+            15.0
+          )
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
+        );
+      }
     }
   }
 
@@ -108,15 +102,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _onShopSelectedFromList(Shop shop) {
     if (shop.lat != null && shop.long != null) {
+      // 1. Átváltunk a térkép tabra
       setState(() {
-        _selectedIndex = 0; // Átváltás térkép nézetre
+        _selectedIndex = 0; 
       });
 
-      // Google Maps esetén a kameramozgatást a widget state-je kezeli,
-      // vagy a controlleren keresztül kellene, de a legegyszerűbb, ha
-      // most csak megmutatjuk a részleteket.
+      // 2. Megvárjuk, amíg a Térkép widget felépül (ez a titka a fagyás elkerülésének)
       WidgetsBinding.instance.addPostFrameCallback((_) {
-         _showShopDetails(shop);
+        // Ha a kontroller létezik (már betöltött a térkép)
+        if (_mapController != null) {
+          _mapController!.animateCamera(
+            gmaps.CameraUpdate.newLatLngZoom(
+              gmaps.LatLng(shop.lat!, shop.long!), 
+              16.0
+            )
+          );
+          // Csak az animáció indítása után nyitjuk meg a modált
+          _showShopDetails(shop);
+        } else {
+          // Ha valamiért még mindig nincs kontroller (ritka), akkor csak a modált nyitjuk
+           _showShopDetails(shop);
+        }
       });
     } else {
       _showShopDetails(shop);
@@ -133,8 +139,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     Widget currentView;
     
+    // Térkép nézet
     if (_selectedIndex == 0) {
-      // KONVERZIÓ: latlong2 -> google_maps_flutter LatLng
       gmaps.LatLng? googleUserLocation;
       if (myPosition != null) {
         googleUserLocation = gmaps.LatLng(myPosition!.latitude, myPosition!.longitude);
@@ -144,9 +150,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         shops: shops, 
         userLocation: googleUserLocation, 
         onShopSelected: _showShopDetails,
-        // mapCenter és mapController paraméterek TÖRÖLVE lettek
+        onMapCreated: (controller) {
+          // Itt mentjük el a kontrollert, amikor a térkép létrejön
+          _mapController = controller;
+        },
       );
-    } else {
+    } 
+    // Lista nézet
+    else {
       currentView = ShopList(
         shops: shops, 
         myPosition: myPosition,
@@ -158,10 +169,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       appBar: AppBar(
         title: const Text(
           'Dohánybolt Kereső',
-          style: TextStyle(
-            fontWeight: FontWeight.bold, 
-            fontSize: 22,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
         ),
         centerTitle: false,
         scrolledUnderElevation: 4.0,
