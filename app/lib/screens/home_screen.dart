@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+// KIVETTÜK: import 'package:flutter_map/flutter_map.dart'; // Ez már nem kell
+import 'package:latlong2/latlong.dart'; // Ez marad a távolságszámításhoz!
+import 'package:google_maps_flutter/google_maps_flutter.dart' as google_maps; // ÚJ: Google Maps import aliassal
+
 import '../models/shop.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
-// Most már a HomeScreen importálja a modalt, mert ő nyitja meg!
 import '../widgets/shop_details_modal.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -19,12 +20,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
-  final MapController _mapController = MapController();
+  
+  // A régi MapController nem kell, a Google térkép máshogy kezeli
+  // final MapController _mapController = MapController(); 
 
   List<Shop> shops = [];
   bool isLoading = true;
-  LatLng? myPosition;
-  LatLng mapCenter = const LatLng(47.50712, 19.04557);
+  
+  // Ez továbbra is a latlong2 típusa, mert ezzel számoljuk a távolságot!
+  LatLng? myPosition; 
   
   int _selectedIndex = 0;
 
@@ -34,19 +38,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _firstLoad();
   }
 
-  // --- ÚJ RENDEZŐ FÜGGVÉNY ---
   void _sortShopsByDistance() {
     if (myPosition == null) return;
     
     const Distance distance = Distance();
     
     shops.sort((a, b) {
-      // Ha 'a'-nak nincs koordinátája, sorolja hátra
       if (a.lat == null || a.long == null) return 1;
-      // Ha 'b'-nek nincs, sorolja 'b'-t hátra
       if (b.lat == null || b.long == null) return -1;
 
-      // Ha mindkettőnek van, mehet a matek
       final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat!, a.long!));
       final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat!, b.long!));
       return distA.compareTo(distB);
@@ -58,13 +58,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (position != null) {
       setState(() {
         myPosition = position;
-        mapCenter = position;
       });
     }
 
     final fetchedShops = await _apiService.fetchShops();
     
-    // Módosítás: Először hozzárendeljük, majd ha van pozíció, rendezzük
     shops = fetchedShops;
     if (myPosition != null) {
       _sortShopsByDistance();
@@ -75,167 +73,85 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _handleLocationPress() async {
-    final cachedPosition = await _locationService.getLastKnownPosition();
-    
-    if (cachedPosition != null) {
-      _animatedMapMove(cachedPosition, 15.0);
-      setState(() {
-        myPosition = cachedPosition;
-        // Ha van cache-elt pozíció, ahhoz is rendezhetünk gyorsan egyet
-        _sortShopsByDistance();
-      });
-    }
-
-    final freshPosition = await _locationService.determinePosition();
-    
-    if (freshPosition != null) {
-      setState(() {
-        myPosition = freshPosition;
-        _sortShopsByDistance(); // <--- Itt rendezzük újra a listát a friss pozícióhoz!
-      });
-      // Csak akkor mozgassuk, ha még mindig térkép nézetben vagyunk
-      if (_selectedIndex == 0) {
-        _animatedMapMove(freshPosition, 15.0);
-      }
-    } else if (cachedPosition == null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
-      );
-    }
-  }
-
-  void _animatedMapMove(LatLng destLocation, double destZoom) {
-    if (!mounted) return;
-
-    final latTween = Tween<double>(
-        begin: _mapController.camera.center.latitude, end: destLocation.latitude);
-    final lngTween = Tween<double>(
-        begin: _mapController.camera.center.longitude, end: destLocation.longitude);
-    final zoomTween = Tween<double>(
-        begin: _mapController.camera.zoom, end: destZoom);
-
-    final controller = AnimationController(
-        duration: const Duration(milliseconds: 1000),
-        vsync: this);
-
-    final Animation<double> animation = CurvedAnimation(
-        parent: controller, curve: Curves.fastOutSlowIn);
-
-    controller.addListener(() {
-      _mapController.move(
-          LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-          zoomTween.evaluate(animation));
-    });
-
-    animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        controller.dispose();
-      }
-    });
-
-    controller.forward();
-  }
-
-  // --- KÖZÖS METÓDUS A MODAL MEGNYITÁSÁRA ---
-  void _showShopDetails(Shop shop) {
+  void _onShopSelected(Shop shop) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => ShopDetailsModal(shop: shop, myPosition: myPosition),
+      builder: (context) => ShopDetailsModal(
+        shop: shop,
+        myPosition: myPosition,
+      ),
     );
-  }
-
-  // --- EZT HÍVJUK A LISTÁBÓL ---
-  void _onShopSelectedFromList(Shop shop) {
-    // Csak akkor váltunk térképre, ha VAN hova odamozogni
-    if (shop.lat != null && shop.long != null) {
-      setState(() {
-        _selectedIndex = 0;
-      });
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-         _animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
-         _showShopDetails(shop);
-      });
-    } else {
-      // Ha nincs térkép adat, csak a részleteket mutatjuk
-      _showShopDetails(shop);
-    }
-  }
-
-  void _onDestinationSelected(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget currentView;
-    
-    if (_selectedIndex == 0) {
-      currentView = TobaccoMap(
-        shops: shops, 
-        myPosition: myPosition, 
-        mapCenter: mapCenter,
-        mapController: _mapController,
-        onShopSelected: _showShopDetails, // Térképen simán csak nyitjuk
-      );
-    } else {
-      currentView = ShopList(
-        shops: shops, 
-        myPosition: myPosition,
-        onShopSelected: _onShopSelectedFromList, // Listából váltunk és nyitunk
-      );
-    }
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Dohánybolt Kereső',
-          style: TextStyle(
-            fontWeight: FontWeight.bold, 
-            fontSize: 22, // Kicsit nagyobb méret
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          // 1. TÉRKÉP NÉZET
+          TobaccoMap(
+            shops: shops,
+            // KONVERZIÓ: Itt alakítjuk át a latlong2-t Google Maps típusra!
+            userLocation: myPosition != null 
+                ? google_maps.LatLng(myPosition!.latitude, myPosition!.longitude) 
+                : null,
+            onShopSelected: _onShopSelected,
           ),
-        ),
-        centerTitle: false, // BALRA IGAZÍTÁS
-        scrolledUnderElevation: 4.0, // Finom színváltás görgetéskor
-        backgroundColor: Theme.of(context).colorScheme.surface, // Alap háttérszín
+          
+          // 2. LISTA NÉZET
+          isLoading 
+              ? const Center(child: CircularProgressIndicator())
+              : ShopList(
+                  shops: shops, 
+                  myPosition: myPosition,
+                  onShopTap: _onShopSelected,
+                ),
+        ],
       ),
-      
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : currentView,
-      
-      // ÚJ: Csak akkor látszik a gomb, ha a Térkép (0-s index) van kiválasztva
-      floatingActionButton: _selectedIndex == 0 ? FloatingActionButton(
-        onPressed: _handleLocationPress,
-        tooltip: 'Helymeghatározás',
-        child: const Icon(Icons.my_location),
-      ) : null,
-
       bottomNavigationBar: NavigationBar(
-        height: 65,
         selectedIndex: _selectedIndex,
-        onDestinationSelected: _onDestinationSelected,
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        destinations: const <Widget>[
+        onDestinationSelected: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        destinations: const [
           NavigationDestination(
-            selectedIcon: Icon(Icons.map),
             icon: Icon(Icons.map_outlined),
+            selectedIcon: Icon(Icons.map),
             label: 'Térkép',
           ),
           NavigationDestination(
-            selectedIcon: Icon(Icons.view_list),
-            icon: Icon(Icons.view_list_outlined),
+            icon: Icon(Icons.list_outlined),
+            selectedIcon: Icon(Icons.list),
             label: 'Lista',
           ),
         ],
       ),
+      // Lebegő gomb csak a térképnél (0. index) jelenjen meg
+      floatingActionButton: _selectedIndex == 0 
+          ? FloatingActionButton(
+              onPressed: () async {
+                // Újrakérjük a pozíciót
+                final pos = await _locationService.determinePosition();
+                if (pos != null) {
+                  setState(() {
+                    myPosition = pos;
+                    _sortShopsByDistance();
+                  });
+                  // Megjegyzés: A Google térkép automatikusan követi a userLocation változást 
+                  // a TobaccoMap widgetben megírt logika miatt (_moveCameraToUser).
+                }
+              },
+              child: const Icon(Icons.my_location),
+            )
+          : null,
     );
   }
 }
