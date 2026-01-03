@@ -4,6 +4,7 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // 
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
+import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 
 class TobaccoMap extends StatelessWidget {
   final List<Shop> shops;
@@ -39,9 +40,14 @@ class TobaccoMap extends StatelessWidget {
       ),
       children: [
         TileLayer(
+          //tileProvider: CancellableNetworkTileProvider(),
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'hu.csakos.tobacco_finder',
           retinaMode: true,
+          //zoomOffset: -1,   // KIPRÓBÁLÁSRA: Ez élesíti a képet (de több adatot eszik!)
+
+          // A 2 azt jelenti, hogy a képernyő méretének 2x-esét tölti be előre körülötted.
+          panBuffer: 1,
         ),
 
         // CLUSTERING HASZNÁLATA (A korábbi javaslat alapján)

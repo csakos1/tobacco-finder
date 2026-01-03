@@ -36,9 +36,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   dio: ^5.9.0
   flutter_map: ^7.0.2
-  latlong2: ^0.9.1
+  #latlong2: ^0.9.1
+  #Maps_flutter: ^2.10.0
   geolocator: ^13.0.0
   flutter_map_marker_cluster: ^1.4.0
+  flutter_map_cancellable_tile_provider: ^3.0.2
 
 dev_dependencies:
   flutter_test:
