@@ -54,24 +54,64 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _firstLoad() async {
-    final position = await _locationService.determinePosition();
-    if (position != null) {
-      setState(() {
-        myPosition = position;
-        mapCenter = position;
-      });
+    // 1. PÁRHUZAMOSÍTÁS: Azonnal indítsuk el a bolt letöltést (ne várjunk a GPS-re)
+    final shopsFuture = _apiService.fetchShops();
+
+    // 2. GYORS HELYMEGHATÁROZÁS: Próbáljuk meg a cache-elt (utolsó ismert) pozíciót
+    // Ez szinte azonnal megvan, nem kell műholdakra várni.
+    LatLng? initialPosition;
+    try {
+      initialPosition = await _locationService.getLastKnownPosition();
+    } catch (e) {
+      print("Hiba a cache pozíció lekérésnél: $e");
     }
 
-    final fetchedShops = await _apiService.fetchShops();
-    
-    // Módosítás: Először hozzárendeljük, majd ha van pozíció, rendezzük
-    shops = fetchedShops;
+    if (initialPosition != null) {
+      myPosition = initialPosition;
+      mapCenter = initialPosition;
+    }
+
+    // 3. Várjuk be a boltokat (ez általában gyorsabb, mint a friss GPS)
+    try {
+      final fetchedShops = await shopsFuture;
+      shops = fetchedShops;
+    } catch (e) {
+      print("Bolt letöltési hiba: $e");
+    }
+
+    // Ha van cache-elt pozíció, máris rendezzük a listát
     if (myPosition != null) {
       _sortShopsByDistance();
     }
 
-    setState(() {
-      isLoading = false;
+    // 4. AZONNALI UI FELOLDÁS: Itt már van adatunk (boltok + kb. helyzet),
+    // engedjük be a usert! Nem várjuk meg a lassú, pontos GPS-t.
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+
+    // 5. HÁTTÉRFOLYAMAT: Most kérjük le a pontos GPS-t a háttérben.
+    // A user már látja a térképet, miközben ez fut.
+    _locationService.determinePosition().then((freshPosition) {
+      if (freshPosition != null && mounted) {
+        setState(() {
+          // Csak akkor frissítjük, ha tényleg kaptunk újat
+          myPosition = freshPosition;
+          
+          // Ha az elején nem volt semmi (pl. első telepítés), akkor vigyük oda a kamerát
+          if (initialPosition == null) {
+             _animatedMapMove(freshPosition, 15.0);
+          }
+          
+          // Újrarendezzük a listát a pontosabb helyzet alapján
+          _sortShopsByDistance();
+        });
+      }
+    }).catchError((e) {
+      // Ha nem sikerül a pontos hely, nem baj, a térkép már használható
+      print("Nem sikerült a pontos helymeghatározás: $e");
     });
   }
 
