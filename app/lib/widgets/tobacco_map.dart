@@ -124,7 +124,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
           tileProvider: CancellableNetworkTileProvider(),
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'hu.csakos.tobacco_finder',
-          retinaMode: false,
+          retinaMode: true,
           panBuffer: 1,
         ),
 

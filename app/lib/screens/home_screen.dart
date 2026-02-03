@@ -166,47 +166,83 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  // Egy új változó, hogy lássuk, épp dolgozik-e a GPS
+  bool _isLocating = false;
+
   Future<void> _handleLocationPress() async {
-    // UI visszajelzés
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Helymeghatározás folyamatban...'),
-        duration: Duration(milliseconds: 1000),
-      ),
-    );
+    // 1. Bekapcsoljuk a pörgést
+    setState(() {
+      _isLocating = true;
+    });
 
-    final freshPosition = await _locationService.determinePosition();
+    try {
+      // Elindítjuk a GPS keresést a háttérben (még nem várjuk meg!)
+      final gpsFuture = _locationService.determinePosition();
 
-    if (freshPosition != null) {
-      // Ha rányomott a gombra, akkor biztosan friss adatokat akar a környékről
-      var newShops = await _apiService.fetchNearby(
-        freshPosition.latitude,
-        freshPosition.longitude,
-      );
+      // Közben, ha van cache pozíció, odamozgunk (hogy lásson valamit a user)
+      try {
+        final cachedPosition = await _locationService.getLastKnownPosition();
+        if (cachedPosition != null && _selectedIndex == 0) {
+          // Itt a 'await' miatt megvárjuk, amíg odaér a térkép!
+          // Ez kb. 1 mp, addig a gpsFuture is dolgozik a háttérben.
+          await _animatedMapMove(cachedPosition, 15.0);
+        }
+      } catch (_) {}
 
-      setState(() {
-        myPosition = freshPosition;
-        shops = newShops; // Frissítjük a boltokat az új helyre
-        _sortShopsByDistance();
-      });
+      // Most várjuk meg a friss GPS jelet
+      final freshPosition = await gpsFuture;
 
-      if (_selectedIndex == 0) {
-        _animatedMapMove(freshPosition, 15.0);
+      if (freshPosition != null) {
+        // Adatok frissítése
+        var newShops = await _apiService.fetchNearby(
+          freshPosition.latitude,
+          freshPosition.longitude,
+        );
+
+        if (mounted) {
+          setState(() {
+            myPosition = freshPosition;
+            shops = newShops;
+            _sortShopsByDistance();
+          });
+
+          // Ha még mindig a térképen vagyunk, animáljunk a pontos helyre
+          if (_selectedIndex == 0) {
+            // Itt is megvárjuk az animáció végét!
+            await _animatedMapMove(freshPosition, 15.0);
+          }
+        }
       }
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
-      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Nem sikerült meghatározni a helyzetet.'),
+          ),
+        );
+      }
+    } finally {
+      // 3. CSAK A LEGVÉGÉN kapcsoljuk ki a pörgést (finally blokk = mindig lefut)
+      if (mounted) {
+        setState(() => _isLocating = false);
+      }
     }
   }
 
-  void _animatedMapMove(LatLng destLocation, double destZoom) {
+  // JAVÍTÁS: Future<void>, hogy meg tudjuk várni a végét
+  Future<void> _animatedMapMove(LatLng destLocation, double destZoom) async {
     if (!mounted) return;
 
-    // JAVÍTÁS: Try-catch blokk, mert a MapController összeomlik,
-    // ha a térkép még nincs teljesen kész (rendered), de mi már mozgatni akarjuk.
+    // 1. OPTIMALIZÁLÁS: Ha már ott vagyunk (pl. < 5 méter), ne animáljunk feleslegesen!
+    // Ez oldja meg, hogy ne pörögjön tovább a gomb, ha már jó helyen a térkép.
+    final currentCenter = _mapController.camera.center;
+    const distance = Distance();
+    if (distance.as(LengthUnit.Meter, currentCenter, destLocation) < 5 &&
+        (_mapController.camera.zoom - destZoom).abs() < 0.1) {
+      return; // Azonnal visszatérünk, nincs várakozás
+    }
+
     try {
-      // Ez a sor dobja a hibát, ha a térkép még nem töltött be:
       final startLat = _mapController.camera.center.latitude;
       final startLng = _mapController.camera.center.longitude;
       final startZoom = _mapController.camera.zoom;
@@ -238,21 +274,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             zoomTween.evaluate(animation),
           );
         } catch (e) {
-          // Ha animáció közben navigálunk el, ez is dobhat hibát, elkapjuk.
+          // Ha navigálás közben hiba van, elnyeljük
         }
       });
 
-      animation.addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          controller.dispose();
-        }
-      });
-
-      controller.forward();
+      // 2. SZINKRONIZÁLÁS: Itt várjuk meg a végét!
+      await controller.forward();
+      controller.dispose();
     } catch (e) {
-      print(
-        "A térkép még nem áll készen a mozgatásra (ez normális induláskor): $e",
-      );
+      print("Animációs hiba: $e");
     }
   }
 
@@ -333,9 +363,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(
-              onPressed: _handleLocationPress,
+              onPressed: _isLocating
+                  ? null
+                  : _handleLocationPress, // Ha tölt, nem nyomható
               tooltip: 'Helymeghatározás',
-              child: const Icon(Icons.my_location),
+              child: _isLocating
+                  ? const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  : const Icon(Icons.my_location),
             )
           : null,
 
