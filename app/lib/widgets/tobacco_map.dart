@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // Ne felejtsd el a clustert!
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 
-class TobaccoMap extends StatelessWidget {
+// VÁLTOZÁS: StatefulWidget lett, hogy ne gyártsa újra a markereket feleslegesen
+class TobaccoMap extends StatefulWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
   final LatLng mapCenter;
@@ -23,34 +24,101 @@ class TobaccoMap extends StatelessWidget {
   });
 
   @override
+  State<TobaccoMap> createState() => _TobaccoMapState();
+}
+
+class _TobaccoMapState extends State<TobaccoMap> {
+  // Itt tároljuk a legyártott markereket
+  late List<Marker> _cachedMarkers;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildMarkers(); // Első futáskor legyártjuk
+  }
+
+  @override
+  void didUpdateWidget(covariant TobaccoMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // VÁLTOZÁS: Csak akkor gyártjuk újra, ha TÉNYLEG változott a boltok listája
+    if (widget.shops != oldWidget.shops) {
+      _buildMarkers();
+    }
+  }
+
+  void _buildMarkers() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final validShops = widget.shops
+        .where((s) => s.lat != null && s.long != null)
+        .toList();
+
+    _cachedMarkers = validShops.map((shop) {
+      bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
+      const double iconSize = 42.0;
+
+      return Marker(
+        point: LatLng(shop.lat!, shop.long!),
+        width: iconSize,
+        height: iconSize,
+        alignment: Alignment.topCenter,
+        child: GestureDetector(
+          onTap: () => widget.onShopSelected(shop),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                Icons.location_on,
+                color: colorScheme.primary,
+                size: iconSize,
+              ),
+              Positioned(
+                top: 10,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: isOpen
+                        ? const Color(0xFF4CAF50)
+                        : const Color(0xFFE53935),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    // 1. SZŰRÉS: Csak a koordinátával rendelkező boltok kellenek
-    final validShops = shops.where((s) => s.lat != null && s.long != null).toList();
-
     return FlutterMap(
-      mapController: mapController,
+      mapController: widget.mapController,
       options: MapOptions(
-        initialCenter: mapCenter,
+        initialCenter: widget.mapCenter,
         initialZoom: 15.0,
         interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom,
+          flags:
+              InteractiveFlag.drag |
+              InteractiveFlag.pinchZoom |
+              InteractiveFlag.doubleTapZoom,
         ),
       ),
       children: [
         TileLayer(
-          //tileProvider: CancellableNetworkTileProvider(),
+          // VÁLTOZÁS: Ezt visszakapcsoltam! Sokkal gyorsabb csempebetöltés.
+          tileProvider: CancellableNetworkTileProvider(),
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'hu.csakos.tobacco_finder',
-          retinaMode: true,
-          //zoomOffset: -1,   // KIPRÓBÁLÁSRA: Ez élesíti a képet (de több adatot eszik!)
-
-          // A 2 azt jelenti, hogy a képernyő méretének 2x-esét tölti be előre körülötted.
+          retinaMode:
+              false, // VÁLTOZÁS: Androidon a retinaMode lassíthatja a betöltést, kapcsold ki teszteléshez!
           panBuffer: 1,
         ),
 
-        // CLUSTERING HASZNÁLATA (A korábbi javaslat alapján)
         MarkerClusterLayerWidget(
           options: MarkerClusterLayerOptions(
             maxClusterRadius: 45,
@@ -58,42 +126,7 @@ class TobaccoMap extends StatelessWidget {
             alignment: Alignment.center,
             padding: const EdgeInsets.all(50),
             maxZoom: 15,
-            
-            // Itt a validShops-ot használjuk!
-            markers: validShops.map((shop) {
-               bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
-               const double iconSize = 42.0;
-
-               return Marker(
-                // Itt már biztosak vagyunk, hogy nem null, használhatjuk a ! jelet
-                point: LatLng(shop.lat!, shop.long!),
-                width: iconSize,
-                height: iconSize,
-                alignment: Alignment.topCenter,
-                child: GestureDetector(
-                  onTap: () => onShopSelected(shop),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Icon(Icons.location_on, color: colorScheme.primary, size: iconSize),
-                      Positioned(
-                        top: 10,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: isOpen ? const Color(0xFF4CAF50) : const Color(0xFFE53935),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-            
+            markers: _cachedMarkers, // VÁLTOZÁS: A cache-elt listát használjuk!
             builder: (context, markers) {
               return Container(
                 decoration: BoxDecoration(
@@ -101,24 +134,30 @@ class TobaccoMap extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 5)
-                  ]
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 5,
+                    ),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   markers.length.toString(),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               );
             },
           ),
         ),
 
-        if (myPosition != null)
+        if (widget.myPosition != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: myPosition!,
+                point: widget.myPosition!,
                 width: 22,
                 height: 22,
                 child: Container(
@@ -127,7 +166,11 @@ class TobaccoMap extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 3),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
                   ),
                 ),

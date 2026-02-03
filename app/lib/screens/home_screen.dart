@@ -6,7 +6,6 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
-// Most már a HomeScreen importálja a modalt, mert ő nyitja meg!
 import '../widgets/shop_details_modal.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -25,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool isLoading = true;
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
-  
+
   int _selectedIndex = 0;
 
   @override
@@ -34,111 +33,167 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _firstLoad();
   }
 
-  // --- ÚJ RENDEZŐ FÜGGVÉNY ---
   void _sortShopsByDistance() {
     if (myPosition == null) return;
-    
+
     const Distance distance = Distance();
-    
+
     shops.sort((a, b) {
-      // Ha 'a'-nak nincs koordinátája, sorolja hátra
       if (a.lat == null || a.long == null) return 1;
-      // Ha 'b'-nek nincs, sorolja 'b'-t hátra
       if (b.lat == null || b.long == null) return -1;
 
-      // Ha mindkettőnek van, mehet a matek
-      final double distA = distance.as(LengthUnit.Meter, myPosition!, LatLng(a.lat!, a.long!));
-      final double distB = distance.as(LengthUnit.Meter, myPosition!, LatLng(b.lat!, b.long!));
+      final double distA = distance.as(
+        LengthUnit.Meter,
+        myPosition!,
+        LatLng(a.lat!, a.long!),
+      );
+      final double distB = distance.as(
+        LengthUnit.Meter,
+        myPosition!,
+        LatLng(b.lat!, b.long!),
+      );
       return distA.compareTo(distB);
     });
   }
 
   Future<void> _firstLoad() async {
-    // 1. PÁRHUZAMOSÍTÁS: Azonnal indítsuk el a bolt letöltést (ne várjunk a GPS-re)
-    final shopsFuture = _apiService.fetchShops();
-
-    // 2. GYORS HELYMEGHATÁROZÁS: Próbáljuk meg a cache-elt (utolsó ismert) pozíciót
-    // Ez szinte azonnal megvan, nem kell műholdakra várni.
+    // 1. OPTIMALIZÁLÁS: Először próbáljunk pozíciót szerezni (Cache-ből)
     LatLng? initialPosition;
     try {
       initialPosition = await _locationService.getLastKnownPosition();
     } catch (e) {
-      print("Hiba a cache pozíció lekérésnél: $e");
+      debugPrint("Hiba a cache pozíció lekérésnél: $e");
     }
 
+    // Ha nincs cache, próbáljunk gyorsan frisset szerezni (ha az app engedélyekkel indul)
+    if (initialPosition == null) {
+      try {
+        // Itt döntés kérdése: várunk a GPS-re, vagy betöltünk mindent.
+        // A sebesség érdekében érdemes megvárni a GPS-t, mert 20km-nyi boltot letölteni
+        // sokkal gyorsabb, mint 6000-et.
+        initialPosition = await _locationService.determinePosition();
+      } catch (e) {
+        debugPrint("GPS hiba induláskor: $e");
+      }
+    }
+
+    // Beállítjuk a pozíciót, ha megvan
     if (initialPosition != null) {
       myPosition = initialPosition;
-      mapCenter = initialPosition;
+      mapCenter = initialPosition!;
+
+      // Ha ez az első indulás, mozgassuk oda a térképet (bár a MapController még nem biztos, hogy él)
+      // A mapCenter változó átadása a TobaccoMap-nek elintézi ezt.
     }
 
-    // 3. Várjuk be a boltokat (ez általában gyorsabb, mint a friss GPS)
+    // 2. BOLTOK LETÖLTÉSE (Kicsi vagy Nagy adatbázis?)
     try {
-      final fetchedShops = await shopsFuture;
+      List<Shop> fetchedShops;
+
+      if (myPosition != null) {
+        // HA VAN POZÍCIÓ: Csak a közelieket töltjük (Backend módosítás kell hozzá!)
+        // Ez a gyorsítás kulcsa!
+        // Feltételezzük, hogy az ApiService-ben már ott a fetchNearby
+        fetchedShops = await _apiService.fetchNearby(
+          myPosition!.latitude,
+          myPosition!.longitude,
+        );
+      } else {
+        // HA NINCS POZÍCIÓ: Kénytelenek vagyunk mindent letölteni (Fallback)
+        fetchedShops = await _apiService.fetchShops();
+      }
+
       shops = fetchedShops;
     } catch (e) {
-      print("Bolt letöltési hiba: $e");
+      debugPrint("Bolt letöltési hiba: $e");
     }
 
-    // Ha van cache-elt pozíció, máris rendezzük a listát
+    // Rendezés
     if (myPosition != null) {
       _sortShopsByDistance();
     }
 
-    // 4. AZONNALI UI FELOLDÁS: Itt már van adatunk (boltok + kb. helyzet),
-    // engedjük be a usert! Nem várjuk meg a lassú, pontos GPS-t.
+    // 3. UI FELOLDÁS
     if (mounted) {
       setState(() {
         isLoading = false;
       });
     }
 
-    // 5. HÁTTÉRFOLYAMAT: Most kérjük le a pontos GPS-t a háttérben.
-    // A user már látja a térképet, miközben ez fut.
-    _locationService.determinePosition().then((freshPosition) {
-      if (freshPosition != null && mounted) {
-        setState(() {
-          // Csak akkor frissítjük, ha tényleg kaptunk újat
-          myPosition = freshPosition;
-          
-          // Ha az elején nem volt semmi (pl. első telepítés), akkor vigyük oda a kamerát
-          if (initialPosition == null) {
-             _animatedMapMove(freshPosition, 15.0);
-          }
-          
-          // Újrarendezzük a listát a pontosabb helyzet alapján
-          _sortShopsByDistance();
-        });
-      }
-    }).catchError((e) {
-      // Ha nem sikerül a pontos hely, nem baj, a térkép már használható
-      print("Nem sikerült a pontos helymeghatározás: $e");
-    });
+    // 4. HÁTTÉRFOLYAMAT: Ha csak cache pozíciónk volt, kérjünk pontosabbat
+    // és frissítsük a listát, ha a user jelentősen máshol van.
+    if (myPosition != null) {
+      _locationService
+          .determinePosition()
+          .then((freshPosition) async {
+            if (freshPosition != null && mounted) {
+              const Distance distance = Distance();
+              // Csak akkor frissítünk mindent, ha több mint 500 métert tévedett a cache
+              if (distance.as(
+                    LengthUnit.Meter,
+                    myPosition!,
+                    LatLng(freshPosition.latitude, freshPosition.longitude),
+                  ) >
+                  500) {
+                // Új boltok kellenek, mert messze vagyunk a cache-től!
+                var newShops = await _apiService.fetchNearby(
+                  freshPosition.latitude,
+                  freshPosition.longitude,
+                );
+
+                setState(() {
+                  myPosition = freshPosition;
+                  shops = newShops;
+                  _sortShopsByDistance();
+                });
+
+                // Ha térképen vagyunk, animáljunk oda
+                if (_selectedIndex == 0) {
+                  _animatedMapMove(freshPosition, 15.0);
+                }
+              } else {
+                // Ha közel vagyunk, elég csak a marker pozíciót pontosítani
+                setState(() {
+                  myPosition = freshPosition;
+                  _sortShopsByDistance();
+                });
+              }
+            }
+          })
+          .catchError((e) {
+            debugPrint("Pontosítás sikertelen: $e");
+          });
+    }
   }
 
   Future<void> _handleLocationPress() async {
-    final cachedPosition = await _locationService.getLastKnownPosition();
-    
-    if (cachedPosition != null) {
-      _animatedMapMove(cachedPosition, 15.0);
-      setState(() {
-        myPosition = cachedPosition;
-        // Ha van cache-elt pozíció, ahhoz is rendezhetünk gyorsan egyet
-        _sortShopsByDistance();
-      });
-    }
+    // UI visszajelzés
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Helymeghatározás folyamatban...'),
+        duration: Duration(milliseconds: 1000),
+      ),
+    );
 
     final freshPosition = await _locationService.determinePosition();
-    
+
     if (freshPosition != null) {
+      // Ha rányomott a gombra, akkor biztosan friss adatokat akar a környékről
+      var newShops = await _apiService.fetchNearby(
+        freshPosition.latitude,
+        freshPosition.longitude,
+      );
+
       setState(() {
         myPosition = freshPosition;
-        _sortShopsByDistance(); // <--- Itt rendezzük újra a listát a friss pozícióhoz!
+        shops = newShops; // Frissítjük a boltokat az új helyre
+        _sortShopsByDistance();
       });
-      // Csak akkor mozgassuk, ha még mindig térkép nézetben vagyunk
+
       if (_selectedIndex == 0) {
         _animatedMapMove(freshPosition, 15.0);
       }
-    } else if (cachedPosition == null && mounted) {
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nem sikerült meghatározni a helyzetet.')),
       );
@@ -149,23 +204,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (!mounted) return;
 
     final latTween = Tween<double>(
-        begin: _mapController.camera.center.latitude, end: destLocation.latitude);
+      begin: _mapController.camera.center.latitude,
+      end: destLocation.latitude,
+    );
     final lngTween = Tween<double>(
-        begin: _mapController.camera.center.longitude, end: destLocation.longitude);
+      begin: _mapController.camera.center.longitude,
+      end: destLocation.longitude,
+    );
     final zoomTween = Tween<double>(
-        begin: _mapController.camera.zoom, end: destZoom);
+      begin: _mapController.camera.zoom,
+      end: destZoom,
+    );
 
     final controller = AnimationController(
-        duration: const Duration(milliseconds: 1000),
-        vsync: this);
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
 
     final Animation<double> animation = CurvedAnimation(
-        parent: controller, curve: Curves.fastOutSlowIn);
+      parent: controller,
+      curve: Curves.fastOutSlowIn,
+    );
 
     controller.addListener(() {
       _mapController.move(
-          LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-          zoomTween.evaluate(animation));
+        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
+        zoomTween.evaluate(animation),
+      );
     });
 
     animation.addStatusListener((status) {
@@ -177,7 +242,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     controller.forward();
   }
 
-  // --- KÖZÖS METÓDUS A MODAL MEGNYITÁSÁRA ---
   void _showShopDetails(Shop shop) {
     showModalBottomSheet(
       context: context,
@@ -185,24 +249,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => ShopDetailsModal(shop: shop, myPosition: myPosition),
+      builder: (context) =>
+          ShopDetailsModal(shop: shop, myPosition: myPosition),
     );
   }
 
-  // --- EZT HÍVJUK A LISTÁBÓL ---
   void _onShopSelectedFromList(Shop shop) {
-    // Csak akkor váltunk térképre, ha VAN hova odamozogni
     if (shop.lat != null && shop.long != null) {
       setState(() {
         _selectedIndex = 0;
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-         _animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
-         _showShopDetails(shop);
+        _animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
+        // Kicsit késleltetjük a modalt, hogy látszódjon az animáció vége
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) _showShopDetails(shop);
+        });
       });
     } else {
-      // Ha nincs térkép adat, csak a részleteket mutatjuk
       _showShopDetails(shop);
     }
   }
@@ -215,48 +280,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    Widget currentView;
-    
-    if (_selectedIndex == 0) {
-      currentView = TobaccoMap(
-        shops: shops, 
-        myPosition: myPosition, 
-        mapCenter: mapCenter,
-        mapController: _mapController,
-        onShopSelected: _showShopDetails, // Térképen simán csak nyitjuk
-      );
-    } else {
-      currentView = ShopList(
-        shops: shops, 
-        myPosition: myPosition,
-        onShopSelected: _onShopSelectedFromList, // Listából váltunk és nyitunk
-      );
-    }
+    // 1. JAVÍTÁS: A 'build' elején lévő if/else TÖRLÉSRE KERÜLT.
+    // Helyette lenn az IndexedStack-et használjuk.
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Dohánybolt Kereső',
-          style: TextStyle(
-            fontWeight: FontWeight.bold, 
-            fontSize: 22, // Kicsit nagyobb méret
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
         ),
-        centerTitle: false, // BALRA IGAZÍTÁS
-        scrolledUnderElevation: 4.0, // Finom színváltás görgetéskor
-        backgroundColor: Theme.of(context).colorScheme.surface, // Alap háttérszín
+        centerTitle: false,
+        scrolledUnderElevation: 4.0,
+        backgroundColor: Theme.of(context).colorScheme.surface,
       ),
-      
+
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : currentView,
-      
-      // ÚJ: Csak akkor látszik a gomb, ha a Térkép (0-s index) van kiválasztva
-      floatingActionButton: _selectedIndex == 0 ? FloatingActionButton(
-        onPressed: _handleLocationPress,
-        tooltip: 'Helymeghatározás',
-        child: const Icon(Icons.my_location),
-      ) : null,
+          : IndexedStack(
+              // <--- ITT A LÉNYEG: Ez oldja meg a szaggatást váltáskor!
+              index: _selectedIndex,
+              children: [
+                // 0. index: Térkép (Megmarad a memóriában)
+                TobaccoMap(
+                  shops: shops,
+                  myPosition: myPosition,
+                  mapCenter: mapCenter,
+                  mapController: _mapController,
+                  onShopSelected: _showShopDetails,
+                ),
+                // 1. index: Lista (Megmarad a memóriában)
+                ShopList(
+                  shops: shops,
+                  myPosition: myPosition,
+                  onShopSelected: _onShopSelectedFromList,
+                ),
+              ],
+            ),
+
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: _handleLocationPress,
+              tooltip: 'Helymeghatározás',
+              child: const Icon(Icons.my_location),
+            )
+          : null,
 
       bottomNavigationBar: NavigationBar(
         height: 65,

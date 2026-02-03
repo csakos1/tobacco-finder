@@ -42,6 +42,25 @@ export class ShopsService {
     return shops;
   }
 
+  // 3. Csak a közeli boltok lekérése (lat, long és távolság alapján)
+  async findNearby(lat: number, long: number, radiusInMeters: number = 20000) {
+    // ST_DWithin: Megnézi, mi van a körzeten belül.
+    // ST_Distance: Opcionális, ha távolság szerint akarod rendezni.
+    const shops = await this.prisma.$queryRaw`
+      SELECT id, name, address, city, 
+      opening_hours as "openingHours", 
+      ST_Y(location::geometry) as lat, 
+      ST_X(location::geometry) as long 
+      FROM "tobacco_shops"
+      WHERE ST_DWithin(
+        location, 
+        ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326), 
+        ${radiusInMeters}
+      )
+    `;
+    return shops;
+  }
+
   // --- Ezeket a függvényeket egyelőre békén hagyjuk (később töltjük ki) ---
 
   findOne(id: number) {
