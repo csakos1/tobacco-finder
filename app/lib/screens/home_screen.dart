@@ -203,43 +203,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _animatedMapMove(LatLng destLocation, double destZoom) {
     if (!mounted) return;
 
-    final latTween = Tween<double>(
-      begin: _mapController.camera.center.latitude,
-      end: destLocation.latitude,
-    );
-    final lngTween = Tween<double>(
-      begin: _mapController.camera.center.longitude,
-      end: destLocation.longitude,
-    );
-    final zoomTween = Tween<double>(
-      begin: _mapController.camera.zoom,
-      end: destZoom,
-    );
+    // JAVÍTÁS: Try-catch blokk, mert a MapController összeomlik,
+    // ha a térkép még nincs teljesen kész (rendered), de mi már mozgatni akarjuk.
+    try {
+      // Ez a sor dobja a hibát, ha a térkép még nem töltött be:
+      final startLat = _mapController.camera.center.latitude;
+      final startLng = _mapController.camera.center.longitude;
+      final startZoom = _mapController.camera.zoom;
 
-    final controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    );
-
-    final Animation<double> animation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.fastOutSlowIn,
-    );
-
-    controller.addListener(() {
-      _mapController.move(
-        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-        zoomTween.evaluate(animation),
+      final latTween = Tween<double>(
+        begin: startLat,
+        end: destLocation.latitude,
       );
-    });
+      final lngTween = Tween<double>(
+        begin: startLng,
+        end: destLocation.longitude,
+      );
+      final zoomTween = Tween<double>(begin: startZoom, end: destZoom);
 
-    animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        controller.dispose();
-      }
-    });
+      final controller = AnimationController(
+        duration: const Duration(milliseconds: 1000),
+        vsync: this,
+      );
 
-    controller.forward();
+      final Animation<double> animation = CurvedAnimation(
+        parent: controller,
+        curve: Curves.fastOutSlowIn,
+      );
+
+      controller.addListener(() {
+        try {
+          _mapController.move(
+            LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
+            zoomTween.evaluate(animation),
+          );
+        } catch (e) {
+          // Ha animáció közben navigálunk el, ez is dobhat hibát, elkapjuk.
+        }
+      });
+
+      animation.addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          controller.dispose();
+        }
+      });
+
+      controller.forward();
+    } catch (e) {
+      print(
+        "A térkép még nem áll készen a mozgatásra (ez normális induláskor): $e",
+      );
+    }
   }
 
   void _showShopDetails(Shop shop) {

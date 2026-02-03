@@ -6,7 +6,6 @@ import '../models/shop.dart';
 import '../utils/shop_logic.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 
-// VÁLTOZÁS: StatefulWidget lett, hogy ne gyártsa újra a markereket feleslegesen
 class TobaccoMap extends StatefulWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
@@ -28,30 +27,42 @@ class TobaccoMap extends StatefulWidget {
 }
 
 class _TobaccoMapState extends State<TobaccoMap> {
-  // Itt tároljuk a legyártott markereket
-  late List<Marker> _cachedMarkers;
+  // 1. JAVÍTÁS: Kezdőértéknek üres listát adunk, hogy biztonságos legyen
+  List<Marker> _cachedMarkers = [];
 
   @override
   void initState() {
     super.initState();
-    _buildMarkers(); // Első futáskor legyártjuk
+    // 2. JAVÍTÁS: Innen KIVETTÜK a _buildMarkers()-t!
+    // Itt még nem szabad Theme.of(context)-et hívni, mert összeomlik az app.
+  }
+
+  // 3. JAVÍTÁS: Ide tettük át a marker gyártást!
+  // Ez a függvény fut le, amikor a Widget teljesen létrejött és már biztonságos a Context/Theme használata.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _buildMarkers();
   }
 
   @override
   void didUpdateWidget(covariant TobaccoMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // VÁLTOZÁS: Csak akkor gyártjuk újra, ha TÉNYLEG változott a boltok listája
+    // Ha változott a lista, újraépítjük a markereket
     if (widget.shops != oldWidget.shops) {
       _buildMarkers();
     }
   }
 
   void _buildMarkers() {
+    // Itt használjuk a Theme-et, ami miatt a hiba volt
     final colorScheme = Theme.of(context).colorScheme;
     final validShops = widget.shops
         .where((s) => s.lat != null && s.long != null)
         .toList();
 
+    // Nem kell setState, mert a didChangeDependencies és didUpdateWidget
+    // után a Flutter automatikusan meghívja a build-et.
     _cachedMarkers = validShops.map((shop) {
       bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
       const double iconSize = 42.0;
@@ -110,12 +121,10 @@ class _TobaccoMapState extends State<TobaccoMap> {
       ),
       children: [
         TileLayer(
-          // VÁLTOZÁS: Ezt visszakapcsoltam! Sokkal gyorsabb csempebetöltés.
           tileProvider: CancellableNetworkTileProvider(),
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'hu.csakos.tobacco_finder',
-          retinaMode:
-              false, // VÁLTOZÁS: Androidon a retinaMode lassíthatja a betöltést, kapcsold ki teszteléshez!
+          retinaMode: false,
           panBuffer: 1,
         ),
 
@@ -126,7 +135,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
             alignment: Alignment.center,
             padding: const EdgeInsets.all(50),
             maxZoom: 15,
-            markers: _cachedMarkers, // VÁLTOZÁS: A cache-elt listát használjuk!
+            markers: _cachedMarkers, // A legyártott listát használjuk
             builder: (context, markers) {
               return Container(
                 decoration: BoxDecoration(
