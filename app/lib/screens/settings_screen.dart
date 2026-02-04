@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart'; // A themeNotifier eléréséhez
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -10,16 +11,11 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: CustomScrollView(
-        // JAVÍTÁS 1: A görgetés letiltása
-        // Mivel nem lehet görgetni, a fejléc nem fog összemenni,
-        // így a cím sosem csúszik be a gomb alá.
         physics: const NeverScrollableScrollPhysics(),
-
         slivers: [
           SliverAppBar.large(
-            pinned: true, // Ez most mindegy is, mert nem görgetünk, de maradhat
+            pinned: true,
             expandedHeight: 160.0,
-
             leading: IconButton(
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.arrow_back),
@@ -28,14 +24,9 @@ class SettingsScreen extends StatelessWidget {
                 shape: const CircleBorder(),
               ),
             ),
-
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
-
-              // JAVÍTÁS 2: Vissza az eredeti helyére (bal szél)
-              // Mivel nincs görgetés, nem kell félni az ütközéstől.
               titlePadding: const EdgeInsets.only(left: 20.0, bottom: 16.0),
-
               title: Text(
                 "Beállítások",
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -64,8 +55,14 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       _GroupItem(
                         title: "Téma",
+                        // Itt használjuk a ValueListenableBuilder-t, hogy a felirat frissüljön
+                        subtitleWidget: ValueListenableBuilder<ThemeMode>(
+                          valueListenable: themeNotifier,
+                          builder: (context, mode, _) =>
+                              Text(_getThemeName(mode)),
+                        ),
                         icon: Icons.palette_outlined,
-                        onTap: () {},
+                        onTap: () => _showThemeDialog(context),
                       ),
                     ],
                   ),
@@ -83,15 +80,90 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-
-                  // A nagy üres helyet (SizedBox height: 800) kivettem,
-                  // mert tiltottuk a görgetést, így felesleges.
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // Material 3 Expressive Dialog
+  void _showThemeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeNotifier,
+          builder: (context, currentMode, _) {
+            return AlertDialog(
+              icon: const Icon(
+                Icons.palette_outlined,
+              ), // Expressive stílus: Ikon felül
+              title: const Text("Téma választása"),
+              contentPadding: const EdgeInsets.only(
+                top: 20,
+                bottom: 24,
+              ), // Nagyobb térköz
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildThemeOption(
+                    context,
+                    ThemeMode.system,
+                    "Rendszer beállításai",
+                    Icons.brightness_auto,
+                    currentMode,
+                  ),
+                  _buildThemeOption(
+                    context,
+                    ThemeMode.light,
+                    "Világos",
+                    Icons.light_mode_outlined,
+                    currentMode,
+                  ),
+                  _buildThemeOption(
+                    context,
+                    ThemeMode.dark,
+                    "Sötét",
+                    Icons.dark_mode_outlined,
+                    currentMode,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Mégse"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOption(
+    BuildContext context,
+    ThemeMode mode,
+    String label,
+    IconData icon,
+    ThemeMode currentMode,
+  ) {
+    return RadioListTile<ThemeMode>(
+      value: mode,
+      groupValue: currentMode,
+      onChanged: (ThemeMode? value) {
+        if (value != null) {
+          themeNotifier.value = value;
+          Navigator.pop(context); // Bezárjuk kiválasztáskor
+        }
+      },
+      title: Text(label),
+      secondary: Icon(icon),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
     );
   }
 
@@ -107,6 +179,17 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  String _getThemeName(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.system:
+        return "Rendszer beállításai";
+      case ThemeMode.light:
+        return "Világos";
+      case ThemeMode.dark:
+        return "Sötét";
+    }
+  }
 }
 
 // --- SEGÉDOSZTÁLYOK ---
@@ -114,12 +197,15 @@ class SettingsScreen extends StatelessWidget {
 class _GroupItem {
   final String title;
   final String? subtitle;
+  final Widget?
+  subtitleWidget; // Új: Widget is lehet a felirat (a frissítéshez)
   final IconData icon;
   final VoidCallback onTap;
 
   _GroupItem({
     required this.title,
     this.subtitle,
+    this.subtitleWidget,
     required this.icon,
     required this.onTap,
   });
@@ -133,7 +219,6 @@ class _SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     const double largeRadius = 24.0;
     const double smallRadius = 4.0;
     const double gap = 2.0;
@@ -185,8 +270,14 @@ class _SettingsGroup extends StatelessWidget {
                     item.title,
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
-                  subtitle: item.subtitle != null ? Text(item.subtitle!) : null,
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  // Kezeli a statikus szöveget és a dinamikus widgetet is
+                  subtitle:
+                      item.subtitleWidget ??
+                      (item.subtitle != null ? Text(item.subtitle!) : null),
+
+                  // JAVÍTÁS: A trailing (nyíl) eltávolítva!
+                  trailing: null,
+
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16.0),
                 ),
               ),

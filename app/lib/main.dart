@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/home_screen.dart';
 
+// Ezzel a globális változóval kezeljük a téma váltást az egész appban
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+
 void main() {
   runApp(const MyApp());
 }
@@ -11,28 +14,64 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Dohánybolt Kereső',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        // Pixel-szerű kék színvilág
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+    // A ValueListenableBuilder figyeli, ha változik a téma beállítás
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentMode, child) {
+        return MaterialApp(
+          title: 'Dohánybolt Kereső',
+          debugShowCheckedModeBanner: false,
 
-        // --- BETŰTÍPUS: OUTFIT (A Google Sans legjobb alternatívája) ---
-        // Ez adja azt a modern, geometrikus "Android 16" érzést.
-        textTheme: GoogleFonts.outfitTextTheme()
-            .apply(bodyColor: Colors.black, displayColor: Colors.black)
-            .copyWith(
-              // Kicsit vastagabb, "Semibold" stílus a címeknek, ahogy kérted
-              headlineMedium: GoogleFonts.outfit(fontWeight: FontWeight.w600),
-              titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w600),
-              titleMedium: GoogleFonts.outfit(fontWeight: FontWeight.w600),
-              bodyLarge: GoogleFonts.outfit(fontWeight: FontWeight.w500),
-              bodyMedium: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+          // --- TÉMA MÓD (Világos / Sötét / Rendszer) ---
+          themeMode: currentMode,
+
+          // --- VILÁGOS TÉMA (A meglévő kódod) ---
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            scaffoldBackgroundColor:
+                Colors.white, // Explicit fehér háttér világos módban
+            textTheme: GoogleFonts.outfitTextTheme()
+                .apply(bodyColor: Colors.black, displayColor: Colors.black)
+                .copyWith(
+                  headlineMedium: GoogleFonts.outfit(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  titleMedium: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  bodyLarge: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+                  bodyMedium: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+                ),
+          ),
+
+          // --- SÖTÉT TÉMA (Az új kód) ---
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            // Sötét mód esetén a brightness: Brightness.dark fontos!
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+              surface: const Color(0xFF171A1F), // A kért szín: #171a1f
             ),
-      ),
-      home: const HomeScreen(),
+            // A Scaffold (képernyő) háttere is legyen a kért szín
+            scaffoldBackgroundColor: const Color(0xFF171A1F),
+
+            // A betűtípus beállítása sötét módra (fehér betűkkel)
+            textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme)
+                .copyWith(
+                  headlineMedium: GoogleFonts.outfit(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  titleMedium: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  bodyLarge: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+                  bodyMedium: GoogleFonts.outfit(fontWeight: FontWeight.w500),
+                ),
+          ),
+
+          home: const HomeScreen(),
+        );
+      },
     );
   }
 }

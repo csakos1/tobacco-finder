@@ -27,18 +27,13 @@ class TobaccoMap extends StatefulWidget {
 }
 
 class _TobaccoMapState extends State<TobaccoMap> {
-  // 1. JAVÍTÁS: Kezdőértéknek üres listát adunk, hogy biztonságos legyen
   List<Marker> _cachedMarkers = [];
 
   @override
   void initState() {
     super.initState();
-    // 2. JAVÍTÁS: Innen KIVETTÜK a _buildMarkers()-t!
-    // Itt még nem szabad Theme.of(context)-et hívni, mert összeomlik az app.
   }
 
-  // 3. JAVÍTÁS: Ide tettük át a marker gyártást!
-  // Ez a függvény fut le, amikor a Widget teljesen létrejött és már biztonságos a Context/Theme használata.
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -48,21 +43,19 @@ class _TobaccoMapState extends State<TobaccoMap> {
   @override
   void didUpdateWidget(covariant TobaccoMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Ha változott a lista, újraépítjük a markereket
     if (widget.shops != oldWidget.shops) {
       _buildMarkers();
     }
   }
 
   void _buildMarkers() {
-    // Itt használjuk a Theme-et, ami miatt a hiba volt
-    final colorScheme = Theme.of(context).colorScheme;
+    // JAVÍTÁS: A kért szín (#28436c) rögzítve minden témához
+    const Color pinColor = Color(0xFF28436C);
+
     final validShops = widget.shops
         .where((s) => s.lat != null && s.long != null)
         .toList();
 
-    // Nem kell setState, mert a didChangeDependencies és didUpdateWidget
-    // után a Flutter automatikusan meghívja a build-et.
     _cachedMarkers = validShops.map((shop) {
       bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
       const double iconSize = 42.0;
@@ -79,7 +72,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
             children: [
               Icon(
                 Icons.location_on,
-                color: colorScheme.primary,
+                color: pinColor, // Fix szín használata
                 size: iconSize,
               ),
               Positioned(
@@ -105,7 +98,8 @@ class _TobaccoMapState extends State<TobaccoMap> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    // A clustereknél is használhatjuk ugyanezt a színt, hogy egységes legyen
+    const Color clusterColor = Color(0xFF28436C);
 
     return FlutterMap(
       mapController: widget.mapController,
@@ -135,11 +129,11 @@ class _TobaccoMapState extends State<TobaccoMap> {
             alignment: Alignment.center,
             padding: const EdgeInsets.all(50),
             maxZoom: 15,
-            markers: _cachedMarkers, // A legyártott listát használjuk
+            markers: _cachedMarkers,
             builder: (context, markers) {
               return Container(
                 decoration: BoxDecoration(
-                  color: colorScheme.primary,
+                  color: clusterColor, // Itt is a #28436c
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: [
@@ -171,7 +165,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
                 height: 22,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.blue,
+                    color: Colors.blueAccent,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 3),
                     boxShadow: [
