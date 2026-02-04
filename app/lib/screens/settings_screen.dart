@@ -10,17 +10,19 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: CustomScrollView(
+        // JAVÍTÁS 1: A görgetés letiltása
+        // Mivel nem lehet görgetni, a fejléc nem fog összemenni,
+        // így a cím sosem csúszik be a gomb alá.
+        physics: const NeverScrollableScrollPhysics(),
+
         slivers: [
           SliverAppBar.large(
-            pinned: true,
+            pinned: true, // Ez most mindegy is, mert nem görgetünk, de maradhat
             expandedHeight: 160.0,
 
-            // JAVÍTÁS 1: Visszaállítjuk a normál gomb méretet és pozíciót
-            // Így nem fog furcsán viselkedni a keret.
             leading: IconButton(
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.arrow_back),
-              // A gomb stílusa: Kör alakú és kicsit szürke háttér
               style: IconButton.styleFrom(
                 backgroundColor: theme.colorScheme.surfaceContainerHighest,
                 shape: const CircleBorder(),
@@ -30,18 +32,14 @@ class SettingsScreen extends StatelessWidget {
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
 
-              // JAVÍTÁS 2 (A legfontosabb):
-              // A 'left' értéket 60.0-ra állítottuk.
-              // Ez azért kell, mert a Vissza gomb kb 40-50px széles.
-              // Így, amikor felgörgetsz, a "Beállítások" felirat a gomb MELLÉ kerül,
-              // nem pedig alá.
-              titlePadding: const EdgeInsets.only(left: 60.0, bottom: 16.0),
+              // JAVÍTÁS 2: Vissza az eredeti helyére (bal szél)
+              // Mivel nincs görgetés, nem kell félni az ütközéstől.
+              titlePadding: const EdgeInsets.only(left: 20.0, bottom: 16.0),
 
               title: Text(
                 "Beállítások",
                 style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight:
-                      FontWeight.w600, // A Pixel stílushoz illő vastagság
+                  fontWeight: FontWeight.w600,
                   color: theme.colorScheme.onSurface,
                 ),
               ),
@@ -86,8 +84,8 @@ class SettingsScreen extends StatelessWidget {
                     ],
                   ),
 
-                  // Helykitöltő a görgetés teszteléséhez
-                  const SizedBox(height: 800),
+                  // A nagy üres helyet (SizedBox height: 800) kivettem,
+                  // mert tiltottuk a görgetést, így felesleges.
                 ],
               ),
             ),
@@ -111,7 +109,7 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-// --- SEGÉDOSZTÁLYOK (A dobozok kinézetéhez) ---
+// --- SEGÉDOSZTÁLYOK ---
 
 class _GroupItem {
   final String title;
@@ -136,7 +134,6 @@ class _SettingsGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Itt állítjuk be a görbületeket
     const double largeRadius = 24.0;
     const double smallRadius = 4.0;
     const double gap = 2.0;
