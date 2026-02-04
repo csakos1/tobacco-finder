@@ -7,6 +7,7 @@ import '../services/location_service.dart';
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
 import '../widgets/shop_details_modal.dart';
+import '../screens/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -80,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // Beállítjuk a pozíciót, ha megvan
     if (initialPosition != null) {
       myPosition = initialPosition;
-      mapCenter = initialPosition!;
+      mapCenter = initialPosition;
 
       // Ha ez az első indulás, mozgassuk oda a térképet (bár a MapController még nem biztos, hogy él)
       // A mapCenter változó átadása a TobaccoMap-nek elintézi ezt.
@@ -330,12 +331,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Dohánybolt Kereső',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+          "Dohánybolt Kereső",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 30),
         ),
-        centerTitle: false,
-        scrolledUnderElevation: 4.0,
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        centerTitle: false, // Balra igazítjuk a címet, hogy legyen hely jobbra
+        actions: [
+          // Itt a fogaskerék ikon
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0), // Kis margó a szélétől
+            child: IconButton(
+              // Material 3-nál az 'outlined' ikonok az elterjedtek
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Beállítások',
+              onPressed: () {
+                // Átnavigálás az új képernyőre
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
 
       body: isLoading
