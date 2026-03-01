@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart'; // A themeNotifier eléréséhez
 
 class SettingsScreen extends StatelessWidget {
@@ -155,10 +156,20 @@ class SettingsScreen extends StatelessWidget {
     return RadioListTile<ThemeMode>(
       value: mode,
       groupValue: currentMode,
-      onChanged: (ThemeMode? value) {
+      onChanged: (ThemeMode? value) async {
+        // <- async lett a függvény!
         if (value != null) {
           themeNotifier.value = value;
-          Navigator.pop(context); // Bezárjuk kiválasztáskor
+
+          // --- ÚJ RÉSZ: Elmentjük a beállítást ---
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('theme_mode', value.index);
+          // ---------------------------------------
+
+          // Ha async hívás után navigálunk, ellenőrizni kell, hogy a context még él-e
+          if (context.mounted) {
+            Navigator.pop(context); // Bezárjuk kiválasztáskor
+          }
         }
       },
       title: Text(label),

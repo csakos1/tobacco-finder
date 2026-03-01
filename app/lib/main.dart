@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Új import
 import 'screens/home_screen.dart';
 
 // Ezzel a globális változóval kezeljük a téma váltást az egész appban
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
-void main() {
+void main() async {
+  // Ez kötelező, ha a runApp előtt async hívásokat (pl. SharedPreferences) végzünk
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Elmentett téma betöltése
+  final prefs = await SharedPreferences.getInstance();
+  // Kikeressük az elmentett indexet (ha még nincs, null lesz)
+  final savedThemeIndex = prefs.getInt('theme_mode');
+
+  if (savedThemeIndex != null) {
+    // A ThemeMode enum elemeit vissza tudjuk állítani az indexük alapján
+    // 0: system, 1: light, 2: dark
+    themeNotifier.value = ThemeMode.values[savedThemeIndex];
+  }
+
   runApp(const MyApp());
 }
 
