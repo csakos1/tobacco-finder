@@ -13,6 +13,9 @@ class TobaccoMap extends StatefulWidget {
   final MapController mapController;
   final Function(Shop) onShopSelected;
 
+  // 1. ÚJ: Callback függvény, ha mozog a térkép
+  final void Function(MapCamera, bool)? onPositionChanged;
+
   const TobaccoMap({
     super.key,
     required this.shops,
@@ -20,6 +23,7 @@ class TobaccoMap extends StatefulWidget {
     required this.mapCenter,
     required this.mapController,
     required this.onShopSelected,
+    this.onPositionChanged, // 2. ÚJ: Paraméterként átvesszük
   });
 
   @override
@@ -106,6 +110,8 @@ class _TobaccoMapState extends State<TobaccoMap> {
       options: MapOptions(
         initialCenter: widget.mapCenter,
         initialZoom: 15.0,
+        // 3. ÚJ: Itt adjuk át az eseményt a FlutterMap-nek!
+        onPositionChanged: widget.onPositionChanged,
         interactionOptions: const InteractionOptions(
           flags:
               InteractiveFlag.drag |

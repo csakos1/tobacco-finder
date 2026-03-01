@@ -1,3 +1,4 @@
+import 'dart:async'; // ÚJ IMPORT A TIMER MIATT!
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -27,6 +28,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
 
   int _selectedIndex = 0;
+  bool _isLocating = false;
+
+  // --- ÚJ VÁLTOZÓK A TÉRKÉP MOZGATÁSÁHOZ ---
+  Timer? _debounce;
+  LatLng? _lastFetchPosition; // Hol töltöttünk le utoljára boltokat?
+  bool _isFetchingArea = false; // Tölt-e épp a háttérben?
+
+  @override
+  void dispose() {
+    _debounce?.cancel(); // Ne felejtsük el törölni a timert kilépéskor
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -92,16 +105,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       List<Shop> fetchedShops;
 
       if (myPosition != null) {
-        // HA VAN POZÍCIÓ: Csak a közelieket töltjük (Backend módosítás kell hozzá!)
-        // Ez a gyorsítás kulcsa!
-        // Feltételezzük, hogy az ApiService-ben már ott a fetchNearby
         fetchedShops = await _apiService.fetchNearby(
           myPosition!.latitude,
           myPosition!.longitude,
         );
+        _lastFetchPosition = myPosition; // ÚJ: Eltároljuk a letöltés helyét!
       } else {
-        // HA NINCS POZÍCIÓ: Kénytelenek vagyunk mindent letölteni (Fallback)
         fetchedShops = await _apiService.fetchShops();
+        _lastFetchPosition = mapCenter; // ÚJ
       }
 
       shops = fetchedShops;
@@ -168,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // Egy új változó, hogy lássuk, épp dolgozik-e a GPS
-  bool _isLocating = false;
+  //bool _isLocating = false;
 
   Future<void> _handleLocationPress() async {
     // 1. Bekapcsoljuk a pörgést
@@ -204,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           setState(() {
             myPosition = freshPosition;
             shops = newShops;
+            _lastFetchPosition = freshPosition; // ÚJ: Frissítjük a bázispontot
             _sortShopsByDistance();
           });
 
@@ -226,6 +238,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // 3. CSAK A LEGVÉGÉN kapcsoljuk ki a pörgést (finally blokk = mindig lefut)
       if (mounted) {
         setState(() => _isLocating = false);
+      }
+    }
+  }
+
+  // --- ÚJ METÓDUSOK A TÉRKÉP MOZGATÁSÁHOZ ---
+
+  void _onMapPositionChanged(MapCamera camera, bool hasGesture) {
+    // KIVETTÜK a "if (!hasGesture) return;" sort!
+    // Így akkor is lefut, ha a térkép csúszása (inercia) megállt.
+
+    // Ha még fut a timer, leállítjuk (Debounce logika)
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    // Indítunk egy 800 milliszekundumos várakozást
+    _debounce = Timer(const Duration(milliseconds: 800), () {
+      _fetchMapArea(camera.center);
+    });
+  }
+
+  Future<void> _fetchMapArea(LatLng newCenter) async {
+    // Ne töltsünk, ha túl közel vagyunk a korábbi letöltés helyéhez
+    if (_lastFetchPosition != null) {
+      const distance = Distance();
+      final double distMoved = distance.as(
+        LengthUnit.Kilometer,
+        _lastFetchPosition!,
+        newCenter,
+      );
+
+      // JAVÍTÁS: 10 km helyett 2 km-es elmozdulásnál már töltsön!
+      if (distMoved < 2.0) return;
+    }
+
+    setState(() {
+      _isFetchingArea = true; // Jelezzük a UI-nak, hogy töltünk
+    });
+
+    try {
+      debugPrint(
+        "Új boltok lekérése innen: ${newCenter.latitude}, ${newCenter.longitude}",
+      );
+
+      final newShops = await _apiService.fetchNearby(
+        newCenter.latitude,
+        newCenter.longitude,
+      );
+
+      // Profi trükk: Összefésüljük a régi és az új boltokat id alapján
+      final existingIds = shops.map((s) => s.id).toSet();
+      final uniqueNewShops = newShops
+          .where((s) => !existingIds.contains(s.id))
+          .toList();
+
+      debugPrint("Talált új boltok száma: ${uniqueNewShops.length}");
+
+      if (uniqueNewShops.isNotEmpty) {
+        setState(() {
+          // Új listát hozunk létre a régi és az új boltok összefűzésével.
+          // Így a Flutter észreveszi a változást és frissíti a térképet!
+          shops = [...shops, ...uniqueNewShops];
+          _sortShopsByDistance(); // Újrarendezzük a listát
+        });
+      }
+
+      _lastFetchPosition =
+          newCenter; // Sikeres letöltés után elmentjük az új pontot
+    } catch (e) {
+      debugPrint("Hiba a terület keresésekor: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isFetchingArea = false);
       }
     }
   }
@@ -308,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
         // Kicsit késleltetjük a modalt, hogy látszódjon az animáció vége
-        Future.delayed(const Duration(milliseconds: 800), () {
+        Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _showShopDetails(shop);
         });
       });
@@ -325,9 +408,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    // 1. JAVÍTÁS: A 'build' elején lévő if/else TÖRLÉSRE KERÜLT.
-    // Helyette lenn az IndexedStack-et használjuk.
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -340,11 +420,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Padding(
             padding: const EdgeInsets.only(right: 8.0), // Kis margó a szélétől
             child: IconButton(
-              // Material 3-nál az 'outlined' ikonok az elterjedtek
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Beállítások',
               onPressed: () {
-                // Átnavigálás az új képernyőre
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const SettingsScreen(),
@@ -358,32 +436,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : IndexedStack(
-              // <--- ITT A LÉNYEG: Ez oldja meg a szaggatást váltáskor!
-              index: _selectedIndex,
+          : Stack(
+              // <--- ÚJ: Stack-be tettük, hogy lebegő indikátort mutathassunk
               children: [
-                // 0. index: Térkép (Megmarad a memóriában)
-                TobaccoMap(
-                  shops: shops,
-                  myPosition: myPosition,
-                  mapCenter: mapCenter,
-                  mapController: _mapController,
-                  onShopSelected: _showShopDetails,
+                IndexedStack(
+                  index: _selectedIndex,
+                  children: [
+                    // 0. index: Térkép
+                    TobaccoMap(
+                      shops: shops,
+                      myPosition: myPosition,
+                      mapCenter: mapCenter,
+                      mapController: _mapController,
+                      onShopSelected: _showShopDetails,
+                      onPositionChanged:
+                          _onMapPositionChanged, // <--- ÚJ: Bekötöttük a mozgatást
+                    ),
+                    // 1. index: Lista
+                    ShopList(
+                      shops: shops,
+                      myPosition: myPosition,
+                      onShopSelected: _onShopSelectedFromList,
+                    ),
+                  ],
                 ),
-                // 1. index: Lista (Megmarad a memóriában)
-                ShopList(
-                  shops: shops,
-                  myPosition: myPosition,
-                  onShopSelected: _onShopSelectedFromList,
-                ),
+
+                // ÚJ: Elegáns kis lebegő indikátor, ha a háttérben töltünk be új várost
+                if (_isFetchingArea && _selectedIndex == 0)
+                  Positioned(
+                    top: 16,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              "Új boltok keresése...",
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
 
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(
-              onPressed: _isLocating
-                  ? null
-                  : _handleLocationPress, // Ha tölt, nem nyomható
+              onPressed: _isLocating ? null : _handleLocationPress,
               tooltip: 'Helymeghatározás',
               child: _isLocating
                   ? const Padding(
