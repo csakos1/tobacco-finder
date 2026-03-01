@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
+import 'opening_hours_widget.dart'; // <--- Új import!
 
 class ShopDetailsModal extends StatelessWidget {
   final Shop shop;
@@ -122,7 +123,6 @@ class ShopDetailsModal extends StatelessWidget {
           // Cím sor
           Row(
             children: [
-              // JAVÍTÁS: A kért szín (#00363e)
               const Icon(
                 Icons.location_on_outlined,
                 size: 20,
@@ -154,7 +154,6 @@ class ShopDetailsModal extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -178,85 +177,17 @@ class ShopDetailsModal extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Lista
+          // --- ITT HASZNÁLJUK AZ ÚJ KISZERVEZETT WIDGETET ---
           Container(
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(16),
             ),
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: shop.openingHours != null
-                  ? _buildOpeningHoursList(shop.openingHours!, context)
-                  : [
-                      const Center(
-                        child: Text(
-                          "Nincs megadva nyitvatartás.",
-                          style: TextStyle(fontStyle: FontStyle.italic),
-                        ),
-                      ),
-                    ],
-            ),
+            child: OpeningHoursWidget(hours: shop.openingHours),
           ),
         ],
       ),
     );
-  }
-
-  List<Widget> _buildOpeningHoursList(
-    Map<String, dynamic> hours,
-    BuildContext context,
-  ) {
-    const days = [
-      "Hétfő",
-      "Kedd",
-      "Szerda",
-      "Csütörtök",
-      "Péntek",
-      "Szombat",
-      "Vasárnap",
-    ];
-    final todayIndex = DateTime.now().weekday - 1;
-
-    return List.generate(7, (index) {
-      final key = (index + 1).toString();
-
-      String timeRange = hours[key]?.toString() ?? "Zárva";
-
-      if (timeRange.length > 20 && timeRange.contains(';')) {
-        timeRange = "Lásd fent";
-      }
-
-      final isToday = index == todayIndex;
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              days[index],
-              style: TextStyle(
-                fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
-                color: isToday
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                fontSize: 15,
-              ),
-            ),
-            Text(
-              timeRange,
-              style: TextStyle(
-                fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
-                color: isToday
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurface,
-                fontSize: 15,
-              ),
-            ),
-          ],
-        ),
-      );
-    });
   }
 }

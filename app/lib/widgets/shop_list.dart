@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
+import 'opening_hours_widget.dart'; // <--- Az új import!
 
-class ShopList extends StatelessWidget {
+class ShopList extends StatefulWidget {
   final List<Shop> shops;
   final LatLng? myPosition;
-  final Distance distanceCalculator = const Distance();
   final Function(Shop) onShopSelected;
 
-  ShopList({
+  const ShopList({
     super.key,
     required this.shops,
     required this.myPosition,
@@ -17,21 +17,29 @@ class ShopList extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    List<Shop> sortedShops = List.from(shops);
+  State<ShopList> createState() => _ShopListState();
+}
 
-    if (myPosition != null) {
+class _ShopListState extends State<ShopList> {
+  final Distance distanceCalculator = const Distance();
+  String? _expandedShopId; // <-- Ebben tároljuk az éppen nyitott bolt ID-ját
+
+  @override
+  Widget build(BuildContext context) {
+    List<Shop> sortedShops = List.from(widget.shops);
+
+    if (widget.myPosition != null) {
       sortedShops.sort((a, b) {
         if (a.lat == null || a.long == null) return 1;
         if (b.lat == null || b.long == null) return -1;
         double distA = distanceCalculator.as(
           LengthUnit.Meter,
-          myPosition!,
+          widget.myPosition!,
           LatLng(a.lat!, a.long!),
         );
         double distB = distanceCalculator.as(
           LengthUnit.Meter,
-          myPosition!,
+          widget.myPosition!,
           LatLng(b.lat!, b.long!),
         );
         return distA.compareTo(distB);
@@ -44,7 +52,6 @@ class ShopList extends StatelessWidget {
 
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    // Lekérjük, hogy sötét módban vagyunk-e
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return ListView.builder(
@@ -55,11 +62,12 @@ class ShopList extends StatelessWidget {
         bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
         String distanceText = "";
-
-        if (myPosition != null && shop.lat != null && shop.long != null) {
+        if (widget.myPosition != null &&
+            shop.lat != null &&
+            shop.long != null) {
           double dist = distanceCalculator.as(
             LengthUnit.Meter,
-            myPosition!,
+            widget.myPosition!,
             LatLng(shop.lat!, shop.long!),
           );
           distanceText = dist > 1000
@@ -67,25 +75,24 @@ class ShopList extends StatelessWidget {
               : "${dist.round()} m";
         }
 
-        // --- SZÍNEK (JAVÍTVA: Sötét mód kezelése a Listában is) ---
+        // --- SZÍNEK ---
         Color statusBgColor;
         Color statusTextColor;
 
         if (isOpen) {
           if (isDark) {
-            // Sötét mód: Sötétzöld háttér, Fehér szöveg (CSERE)
             statusBgColor = Colors.green.shade800;
             statusTextColor = Colors.white;
           } else {
-            // Világos mód: Halvány háttér, Sötétzöld szöveg (EREDETI)
             statusBgColor = Colors.green.withOpacity(0.15);
             statusTextColor = Colors.green.shade800;
           }
         } else {
-          // Zárva logika
           statusBgColor = colorScheme.errorContainer.withOpacity(0.6);
           statusTextColor = colorScheme.error;
         }
+
+        final isExpanded = _expandedShopId == shop.id;
 
         return Card(
           elevation: 0,
@@ -95,111 +102,194 @@ class ShopList extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => onShopSelected(shop),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.store_rounded,
-                      color: colorScheme.onPrimaryContainer,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          shop.name,
-                          style: textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+          child: Column(
+            children: [
+              // 1. Az Alap kártya rész (Mindig látszik)
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    // Ha arra nyomunk, ami már nyitva van, becsukja, különben kinyitja (és az előzőt csukja)
+                    _expandedShopId = isExpanded ? null : shop.id;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "${shop.city}, ${shop.address}",
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Icon(
+                          Icons.store_rounded,
+                          color: colorScheme.onPrimaryContainer,
+                          size: 24,
                         ),
-                        const SizedBox(height: 8),
-
-                        if (distanceText.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.secondaryContainer.withOpacity(
-                                0.5,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              shop.name,
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
                               ),
-                              borderRadius: BorderRadius.circular(8),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.near_me_rounded,
-                                  size: 14,
-                                  color: colorScheme.onSecondaryContainer,
+                            const SizedBox(height: 4),
+                            Text(
+                              "${shop.city}, ${shop.address}",
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            if (distanceText.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  distanceText,
-                                  style: textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.onSecondaryContainer,
-                                    fontWeight: FontWeight.bold,
+                                decoration: BoxDecoration(
+                                  color: colorScheme.secondaryContainer
+                                      .withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.near_me_rounded,
+                                      size: 14,
+                                      color: colorScheme.onSecondaryContainer,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      distanceText,
+                                      style: textTheme.labelMedium?.copyWith(
+                                        color: colorScheme.onSecondaryContainer,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusBgColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          isOpen ? "Nyitva" : "Zárva",
+                          style: textTheme.labelSmall?.copyWith(
+                            color: statusTextColor,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 2. A Lenyíló rész (Nyitvatartás + Gomb)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.fastOutSlowIn,
+                child: isExpanded
+                    ? GestureDetector(
+                        // HitTestBehavior.opaque teszi lehetővé, hogy a belső üres részekre
+                        // kattintva is lefusson az onTap, így bezáruljon a panel.
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          setState(() {
+                            _expandedShopId = null;
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            left: 16.0,
+                            right: 16.0,
+                            bottom: 16.0,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Divider(
+                                color: colorScheme.outlineVariant.withOpacity(
+                                  0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Nyitvatartás dizájn használata
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding: const EdgeInsets.all(16),
+                                child: OpeningHoursWidget(
+                                  hours: shop.openingHours,
+                                ),
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // --- Mutasd Térképen Gomb (Material 3 Expressive) ---
+                              SizedBox(
+                                height:
+                                    56, // Kifejezetten magas, feltűnő M3 gomb
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    // Ugyanúgy meghívja az eredeti térkép-fókuszálós logikát!
+                                    widget.onShopSelected(shop);
+                                  },
+                                  icon: const Icon(Icons.map_rounded),
+                                  label: const Text(
+                                    "Mutasd térképen",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    // A kért elsődleges témaszín alkalmazása:
+                                    backgroundColor: colorScheme.primary,
+                                    foregroundColor: colorScheme.onPrimary,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // JAVÍTÁS: Itt használjuk a dinamikus színeket
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusBgColor, // Javított háttérszín
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      isOpen ? "Nyitva" : "Zárva",
-                      style: textTheme.labelSmall?.copyWith(
-                        color: statusTextColor, // Javított szövegszín
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-            ),
+            ],
           ),
         );
       },
