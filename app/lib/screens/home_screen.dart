@@ -9,6 +9,10 @@ import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
 import '../widgets/shop_details_modal.dart';
 import '../screens/settings_screen.dart';
+import '../utils/shop_logic.dart'; // <-- Ezt is be kell húzni a szűréshez!
+
+// --- ÚJ: A szűrő állapotai ---
+enum ShopFilter { none, openNow, nonStop }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -35,6 +39,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   LatLng? _lastFetchPosition; // Hol töltöttünk le utoljára boltokat?
   bool _isFetchingArea = false; // Tölt-e épp a háttérben?
 
+  // --- ÚJ: Az aktuális szűrő ---
+  ShopFilter _currentFilter = ShopFilter.none;
+
   @override
   void dispose() {
     _debounce?.cancel(); // Ne felejtsük el törölni a timert kilépéskor
@@ -45,6 +52,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _firstLoad();
+  }
+
+  // --- ÚJ: Dinamikusan generált szűrt lista ---
+  List<Shop> get _filteredShops {
+    if (_currentFilter == ShopFilter.openNow) {
+      return shops.where((s) => ShopLogic.isOpenNow(s.openingHours)).toList();
+    } else if (_currentFilter == ShopFilter.nonStop) {
+      return shops.where((s) => ShopLogic.isNonStop(s.openingHours)).toList();
+    }
+    return shops; // Ha nincs szűrő (none), mehet a teljes lista
   }
 
   void _sortShopsByDistance() {
@@ -444,19 +461,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     // 0. index: Térkép
                     TobaccoMap(
-                      shops: shops,
+                      shops: _filteredShops, // <-- Szűrt listát kap!
                       myPosition: myPosition,
                       mapCenter: mapCenter,
                       mapController: _mapController,
                       onShopSelected: _showShopDetails,
-                      onPositionChanged:
-                          _onMapPositionChanged, // <--- ÚJ: Bekötöttük a mozgatást
+                      onPositionChanged: _onMapPositionChanged,
                     ),
                     // 1. index: Lista
                     ShopList(
-                      shops: shops,
+                      shops: _filteredShops, // <-- Szűrt listát kap!
                       myPosition: myPosition,
                       onShopSelected: _onShopSelectedFromList,
+                      // --- ÚJ PARAMÉTEREK ---
+                      currentFilter: _currentFilter,
+                      onFilterChanged: (ShopFilter newFilter) {
+                        setState(() {
+                          _currentFilter = newFilter;
+                        });
+                      },
                     ),
                   ],
                 ),
