@@ -67,20 +67,6 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 24),
-
-                  _buildGroupTitle(theme, "Adatbázis"),
-                  _SettingsGroup(
-                    items: [
-                      _GroupItem(
-                        title: "Adatok frissítése",
-                        subtitle: "Utolsó frissítés: Ma, 10:00",
-                        icon: Icons.sync,
-                        onTap: () {},
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
