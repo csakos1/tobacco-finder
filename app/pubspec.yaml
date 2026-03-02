@@ -43,6 +43,7 @@ dependencies:
   flutter_map_cancellable_tile_provider: ^3.0.2
   google_fonts: ^6.1.0
   shared_preferences: ^2.5.4
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
