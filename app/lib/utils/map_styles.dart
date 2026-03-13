@@ -1,7 +1,7 @@
 // app/lib/utils/map_styles.dart
 
 class MapStyles {
-  // Világos mód: Gyári térkép POI-k nélkül, szürkébb, körvonal nélküli utakkal a jobb kontrasztért.
+  // Világos mód: Gyári térkép POI-k nélkül, szürkébb és VASTAGABB utakkal.
   static const String lightStyle = '''
   [
     {
@@ -12,9 +12,10 @@ class MapStyles {
     },
     {
       "featureType": "road.local",
-      "elementType": "geometry.fill",
+      "elementType": "geometry",
       "stylers": [
-        { "color": "#d4d4d4" }
+        { "color": "#d4d4d4" },
+        { "weight": 2.25 }
       ]
     },
     {
@@ -26,9 +27,10 @@ class MapStyles {
     },
     {
       "featureType": "road.arterial",
-      "elementType": "geometry.fill",
+      "elementType": "geometry",
       "stylers": [
-        { "color": "#bcbcbc" }
+        { "color": "#bcbcbc" },
+        { "weight": 2.5 }
       ]
     },
     {
@@ -40,9 +42,10 @@ class MapStyles {
     },
     {
       "featureType": "road.highway",
-      "elementType": "geometry.fill",
+      "elementType": "geometry",
       "stylers": [
-        { "color": "#a8a8a8" }
+        { "color": "#a8a8a8" },
+        { "weight": 4.0 }
       ]
     },
     {
@@ -55,7 +58,7 @@ class MapStyles {
   ]
   ''';
 
-  // Sötét mód: Google Maps Night téma, POI-k nélkül, MEGNÖVELT út kontraszttal (Ezt jónak ítélted, így maradt).
+  // Sötét mód: Google Maps Night téma, POI-k nélkül, ráközelítésnél is jól látható utakkal.
   static const String darkStyle = '''
   [
     {
@@ -104,12 +107,26 @@ class MapStyles {
       ]
     },
     
-    /* --- UTAK KIEMELÉSE (DARK MODE) --- */
+    /* --- UTAK KIEMELÉSE ÉS JAVÍTÁSA (DARK MODE) --- */
+    {
+      "featureType": "road",
+      "elementType": "geometry",
+      "stylers": [
+        { "color": "#38414e" }
+      ]
+    },
+    {
+      "featureType": "road",
+      "elementType": "geometry.stroke",
+      "stylers": [
+        { "color": "#212a37" }
+      ]
+    },
     {
       "featureType": "road.local",
       "elementType": "geometry.fill",
       "stylers": [
-        { "color": "#4a596e" } 
+        { "color": "#5a6b8c" } 
       ]
     },
     {
@@ -117,14 +134,14 @@ class MapStyles {
       "elementType": "geometry.stroke",
       "stylers": [
         { "color": "#1a232f" },
-        { "weight": 1.2 }
+        { "weight": 1.5 }
       ]
     },
     {
       "featureType": "road.arterial",
       "elementType": "geometry.fill",
       "stylers": [
-        { "color": "#5c6a82" }
+        { "color": "#6d7c96" }
       ]
     },
     {
@@ -132,12 +149,12 @@ class MapStyles {
       "elementType": "geometry.stroke",
       "stylers": [
         { "color": "#171f2b" },
-        { "weight": 1.5 }
+        { "weight": 1.8 }
       ]
     },
     {
       "featureType": "road.highway",
-      "elementType": "geometry",
+      "elementType": "geometry.fill",
       "stylers": [
         { "color": "#746855" }
       ]
@@ -147,7 +164,7 @@ class MapStyles {
       "elementType": "geometry.stroke",
       "stylers": [
         { "color": "#1f2835" },
-        { "weight": 2.0 }
+        { "weight": 2.5 }
       ]
     },
     {

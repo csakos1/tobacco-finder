@@ -8,7 +8,7 @@ class MarkerGenerator {
   static const Color _darkBlue = Color(0xFF28436C);
 
   // Világoskék (Sötét módhoz) - A main.dart-ban beállított Colors.blue alapszínhez igazodva
-  static const Color _lightBlue = ui.Color.fromARGB(255, 23, 158, 182);
+  static const Color _lightBlue = ui.Color.fromARGB(255, 40, 108, 172);
 
   static Future<BitmapDescriptor> createShopMarker(
     bool isOpen,
