@@ -1,7 +1,9 @@
 import 'dart:async'; // ÚJ IMPORT A TIMER MIATT!
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+//import 'package:flutter_map/flutter_map.dart';
+//import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/shop.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
@@ -24,7 +26,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
-  final MapController _mapController = MapController();
+  //final MapController _mapController = MapController();
+  GoogleMapController? mapController;
 
   List<Shop> shops = [];
   bool isLoading = true;
@@ -67,21 +70,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _sortShopsByDistance() {
     if (myPosition == null) return;
 
-    const Distance distance = Distance();
-
     shops.sort((a, b) {
       if (a.lat == null || a.long == null) return 1;
       if (b.lat == null || b.long == null) return -1;
 
-      final double distA = distance.as(
-        LengthUnit.Meter,
-        myPosition!,
-        LatLng(a.lat!, a.long!),
+      final double distA = Geolocator.distanceBetween(
+        myPosition!.latitude,
+        myPosition!.longitude,
+        a.lat!,
+        a.long!,
       );
-      final double distB = distance.as(
-        LengthUnit.Meter,
-        myPosition!,
-        LatLng(b.lat!, b.long!),
+      final double distB = Geolocator.distanceBetween(
+        myPosition!.latitude,
+        myPosition!.longitude,
+        b.lat!,
+        b.long!,
       );
       return distA.compareTo(distB);
     });
@@ -154,16 +157,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (myPosition != null) {
       _locationService
           .determinePosition()
-          .then((freshPosition) async {
+          .then((LatLng? freshPosition) async {
             if (freshPosition != null && mounted) {
-              const Distance distance = Distance();
+              // ÚJ TÁVOLSÁGSZÁMÍTÁS GEOLOCATORRAL
+              final double distMoved = Geolocator.distanceBetween(
+                myPosition!.latitude,
+                myPosition!.longitude,
+                freshPosition.latitude,
+                freshPosition.longitude,
+              );
+
               // Csak akkor frissítünk mindent, ha több mint 500 métert tévedett a cache
-              if (distance.as(
-                    LengthUnit.Meter,
-                    myPosition!,
-                    LatLng(freshPosition.latitude, freshPosition.longitude),
-                  ) >
-                  500) {
+              if (distMoved > 500) {
                 // Új boltok kellenek, mert messze vagyunk a cache-től!
                 var newShops = await _apiService.fetchNearby(
                   freshPosition.latitude,
@@ -261,31 +266,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // --- ÚJ METÓDUSOK A TÉRKÉP MOZGATÁSÁHOZ ---
 
-  void _onMapPositionChanged(MapCamera camera, bool hasGesture) {
-    // KIVETTÜK a "if (!hasGesture) return;" sort!
-    // Így akkor is lefut, ha a térkép csúszása (inercia) megállt.
-
+  void _onMapPositionChanged(CameraPosition position) {
     // Ha még fut a timer, leállítjuk (Debounce logika)
     if (_debounce?.isActive ?? false) _debounce!.cancel();
 
     // Indítunk egy 800 milliszekundumos várakozást
     _debounce = Timer(const Duration(milliseconds: 800), () {
-      _fetchMapArea(camera.center);
+      _fetchMapArea(
+        position.target,
+      ); // Itt a position.target adja meg a LatLng-et
     });
   }
 
   Future<void> _fetchMapArea(LatLng newCenter) async {
     // Ne töltsünk, ha túl közel vagyunk a korábbi letöltés helyéhez
+    // Ne töltsünk, ha túl közel vagyunk a korábbi letöltés helyéhez
     if (_lastFetchPosition != null) {
-      const distance = Distance();
-      final double distMoved = distance.as(
-        LengthUnit.Kilometer,
-        _lastFetchPosition!,
-        newCenter,
+      final double distMovedMeters = Geolocator.distanceBetween(
+        _lastFetchPosition!.latitude,
+        _lastFetchPosition!.longitude,
+        newCenter.latitude,
+        newCenter.longitude,
       );
 
-      // JAVÍTÁS: 10 km helyett 2 km-es elmozdulásnál már töltsön!
-      if (distMoved < 2.0) return;
+      // JAVÍTÁS: 2 km-es (2000 méter) elmozdulásnál már töltsön!
+      if (distMovedMeters < 2000) return;
     }
 
     setState(() {
@@ -332,58 +337,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // JAVÍTÁS: Future<void>, hogy meg tudjuk várni a végét
   Future<void> _animatedMapMove(LatLng destLocation, double destZoom) async {
-    if (!mounted) return;
-
-    // 1. OPTIMALIZÁLÁS: Ha már ott vagyunk (pl. < 5 méter), ne animáljunk feleslegesen!
-    // Ez oldja meg, hogy ne pörögjön tovább a gomb, ha már jó helyen a térkép.
-    final currentCenter = _mapController.camera.center;
-    const distance = Distance();
-    if (distance.as(LengthUnit.Meter, currentCenter, destLocation) < 5 &&
-        (_mapController.camera.zoom - destZoom).abs() < 0.1) {
-      return; // Azonnal visszatérünk, nincs várakozás
-    }
+    if (!mounted || mapController == null) return;
 
     try {
-      final startLat = _mapController.camera.center.latitude;
-      final startLng = _mapController.camera.center.longitude;
-      final startZoom = _mapController.camera.zoom;
-
-      final latTween = Tween<double>(
-        begin: startLat,
-        end: destLocation.latitude,
+      // A Google Maps beépített animációja sokkal simább és megbízhatóbb
+      await mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(destLocation, destZoom),
       );
-      final lngTween = Tween<double>(
-        begin: startLng,
-        end: destLocation.longitude,
-      );
-      final zoomTween = Tween<double>(begin: startZoom, end: destZoom);
-
-      final controller = AnimationController(
-        duration: const Duration(milliseconds: 1000),
-        vsync: this,
-      );
-
-      final Animation<double> animation = CurvedAnimation(
-        parent: controller,
-        curve: Curves.fastOutSlowIn,
-      );
-
-      controller.addListener(() {
-        try {
-          _mapController.move(
-            LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-            zoomTween.evaluate(animation),
-          );
-        } catch (e) {
-          // Ha navigálás közben hiba van, elnyeljük
-        }
-      });
-
-      // 2. SZINKRONIZÁLÁS: Itt várjuk meg a végét!
-      await controller.forward();
-      controller.dispose();
     } catch (e) {
-      print("Animációs hiba: $e");
+      debugPrint("Animációs hiba: $e");
     }
   }
 
@@ -464,9 +426,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       shops: _filteredShops, // <-- Szűrt listát kap!
                       myPosition: myPosition,
                       mapCenter: mapCenter,
-                      mapController: _mapController,
+                      //mapController: _mapController,
                       onShopSelected: _showShopDetails,
-                      onPositionChanged: _onMapPositionChanged,
+                      //onPositionChanged: _onMapPositionChanged,
+                      onCameraMove: _onMapPositionChanged,
+                      onMapCreated: (controller) {
+                        mapController = controller;
+                      },
                     ),
                     // 1. index: Lista
                     ShopList(

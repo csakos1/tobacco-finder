@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+//import 'package:latlong2/latlong.dart';
 
 class LocationService {
   // Ez a "lassú", pontos GPS
@@ -26,10 +27,11 @@ class LocationService {
   Future<LatLng?> getLastKnownPosition() async {
     // Csak akkor kérjük le, ha van engedély, különben hibát dobhat
     LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
       return null;
     }
-    
+
     Position? position = await Geolocator.getLastKnownPosition();
     if (position != null) {
       return LatLng(position.latitude, position.longitude);

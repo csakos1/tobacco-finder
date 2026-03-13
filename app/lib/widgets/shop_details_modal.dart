@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
+//import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
@@ -48,10 +50,11 @@ class ShopDetailsModal extends StatelessWidget {
     // Távolság számítása
     String? distanceString;
     if (myPosition != null && shop.lat != null && shop.long != null) {
-      final double dist = const Distance().as(
-        LengthUnit.Meter,
-        myPosition!,
-        LatLng(shop.lat!, shop.long!),
+      final double dist = Geolocator.distanceBetween(
+        myPosition!.latitude,
+        myPosition!.longitude,
+        shop.lat!,
+        shop.long!,
       );
       distanceString = dist > 1000
           ? "${(dist / 1000).toStringAsFixed(1)} km"

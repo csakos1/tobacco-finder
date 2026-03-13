@@ -1,3 +1,14 @@
+import java.util.Properties
+import java.io.FileInputStream
+
+// 1. ÚJ RÉSZ: Beolvassuk a local.properties fájlt és a MAPS_API_KEY-t
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+val mapsApiKey = localProperties.getProperty("MAPS_API_KEY") ?: ""
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -28,6 +39,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 2. ÚJ RÉSZ: Bepasszoljuk a kulcsot a Manifest számára
+        manifestPlaceholders += mapOf("MAPS_API_KEY" to mapsApiKey)
     }
 
     buildTypes {

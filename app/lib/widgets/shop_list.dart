@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
+//import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
 import 'opening_hours_widget.dart';
@@ -26,7 +28,7 @@ class ShopList extends StatefulWidget {
 }
 
 class _ShopListState extends State<ShopList> {
-  final Distance distanceCalculator = const Distance();
+  // A distanceCalculator sort KIKUKÁZTUK!
   String? _expandedShopId;
 
   @override
@@ -41,15 +43,17 @@ class _ShopListState extends State<ShopList> {
       sortedShops.sort((a, b) {
         if (a.lat == null || a.long == null) return 1;
         if (b.lat == null || b.long == null) return -1;
-        double distA = distanceCalculator.as(
-          LengthUnit.Meter,
-          widget.myPosition!,
-          LatLng(a.lat!, a.long!),
+        double distA = Geolocator.distanceBetween(
+          widget.myPosition!.latitude,
+          widget.myPosition!.longitude,
+          a.lat!,
+          a.long!,
         );
-        double distB = distanceCalculator.as(
-          LengthUnit.Meter,
-          widget.myPosition!,
-          LatLng(b.lat!, b.long!),
+        double distB = Geolocator.distanceBetween(
+          widget.myPosition!.latitude,
+          widget.myPosition!.longitude,
+          b.lat!,
+          b.long!,
         );
         return distA.compareTo(distB);
       });
@@ -165,10 +169,11 @@ class _ShopListState extends State<ShopList> {
                 if (widget.myPosition != null &&
                     shop.lat != null &&
                     shop.long != null) {
-                  double dist = distanceCalculator.as(
-                    LengthUnit.Meter,
-                    widget.myPosition!,
-                    LatLng(shop.lat!, shop.long!),
+                  double dist = Geolocator.distanceBetween(
+                    widget.myPosition!.latitude,
+                    widget.myPosition!.longitude,
+                    shop.lat!,
+                    shop.long!,
                   );
                   distanceText = dist > 1000
                       ? "${(dist / 1000).toStringAsFixed(1)} km"
