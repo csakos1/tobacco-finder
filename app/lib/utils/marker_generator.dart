@@ -4,9 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MarkerGenerator {
-  static const Color primaryColor = Color(0xFF28436C);
+  // Eredeti sötétkék (Világos módhoz)
+  static const Color _darkBlue = Color(0xFF28436C);
 
-  static Future<BitmapDescriptor> createShopMarker(bool isOpen) async {
+  // Világoskék (Sötét módhoz) - A main.dart-ban beállított Colors.blue alapszínhez igazodva
+  static const Color _lightBlue = ui.Color.fromARGB(255, 23, 158, 182);
+
+  static Future<BitmapDescriptor> createShopMarker(
+    bool isOpen,
+    bool isDarkMode,
+  ) async {
+    // Aktuális szín kiválasztása a téma alapján
+    final Color pinColor = isDarkMode ? _lightBlue : _darkBlue;
+
     const double logicalSize = 45.0; // Az általad kért tökéletes méret
     const double dpr = 3.0; // 3x-os felbontás a tűéles képért!
     const double physicalSize = logicalSize * dpr;
@@ -26,7 +36,7 @@ class MarkerGenerator {
       style: TextStyle(
         fontSize: logicalSize,
         fontFamily: Icons.location_on.fontFamily,
-        color: primaryColor,
+        color: pinColor, // <--- A témafüggő szín használata
       ),
     );
     iconPainter.layout();
@@ -54,14 +64,19 @@ class MarkerGenerator {
     );
 
     // Itt történik a varázslat: 135px képet adunk, de 45px méretre kényszerítjük!
-    // (Megjegyzés: Ha a "size:" paramétert aláhúzná pirossal a Dart, akkor cseréld le a 'fromBytes'-t 'bytes'-ra)
     return BitmapDescriptor.fromBytes(
       byteData!.buffer.asUint8List(),
       size: const Size(logicalSize, logicalSize),
     );
   }
 
-  static Future<BitmapDescriptor> createClusterMarker(int clusterSize) async {
+  static Future<BitmapDescriptor> createClusterMarker(
+    int clusterSize,
+    bool isDarkMode,
+  ) async {
+    // Aktuális szín kiválasztása a téma alapján
+    final Color pinColor = isDarkMode ? _lightBlue : _darkBlue;
+
     const double logicalSize = 50.0; // Az általad kért klaszter méret
     const double dpr = 3.0;
     const double physicalSize = logicalSize * dpr;
@@ -70,7 +85,8 @@ class MarkerGenerator {
     final Canvas canvas = Canvas(pictureRecorder);
     canvas.scale(dpr, dpr);
 
-    final Paint paint = Paint()..color = primaryColor;
+    final Paint paint = Paint()
+      ..color = pinColor; // <--- A témafüggő szín használata
     final Paint borderPaint = Paint()
       ..color = Colors.white
       ..strokeWidth = 3.0

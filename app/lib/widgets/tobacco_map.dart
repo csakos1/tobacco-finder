@@ -22,7 +22,7 @@ class TobaccoMap extends StatefulWidget {
   final LatLng? myPosition;
   final LatLng mapCenter;
   final Function(Shop) onShopSelected;
-  final void Function(CameraPosition)? onCameraMove; // <--- ÚJ PARAMÉTER
+  final void Function(CameraPosition)? onCameraMove;
   final void Function(GoogleMapController)? onMapCreated;
 
   const TobaccoMap({
@@ -31,8 +31,8 @@ class TobaccoMap extends StatefulWidget {
     required this.myPosition,
     required this.mapCenter,
     required this.onShopSelected,
-    this.onCameraMove, // <--- ÚJ PARAMÉTER BEKÉRÉSE
-    this.onMapCreated, // <--- ÚJ PARAMÉTER BEKÉRÉSEs
+    this.onCameraMove,
+    this.onMapCreated,
   });
 
   @override
@@ -43,6 +43,9 @@ class _TobaccoMapState extends State<TobaccoMap> {
   late ClusterManager<ShopClusterItem> _manager;
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
+
+  // Eltároljuk az aktuális témát, hogy tudjuk, mikor kell újrarajzolni a markereket
+  bool? _lastIsDarkMode;
 
   @override
   void initState() {
@@ -64,11 +67,8 @@ class _TobaccoMapState extends State<TobaccoMap> {
       _getClusterItems(),
       _updateMarkers,
       markerBuilder: _markerBuilder,
-      // ÚJ SOROK: Ezekkel szabályozzuk, hogy MIKOR essen szét a klaszter.
-      // Ezzel a beállítással sokkal hamarabb megjelennek az egyedi boltok!
       levels: const [1, 4.25, 6.75, 10, 12.0, 13.0, 14.0, 15.0, 16],
-      extraPercent:
-          0.2, // Ne klaszterezze feleslegesen a messze lévő, nem látható boltokat
+      extraPercent: 0.2,
     );
   }
 
@@ -87,19 +87,23 @@ class _TobaccoMapState extends State<TobaccoMap> {
 
   // --- Markerek aszinkron legenerálása ---
   Future<Marker> _markerBuilder(dynamic clusterDynamic) async {
-    // 1. Átalakítjuk a beérkező "ismeretlen" dolgot a mi típusunkra
     final Cluster<ShopClusterItem> cluster =
         clusterDynamic as Cluster<ShopClusterItem>;
 
     final bool isCluster = cluster.isMultiple;
+    // Lekérjük a state-ből az utolsó ismert témát
+    final bool isDarkMode = _lastIsDarkMode ?? false;
 
     BitmapDescriptor icon;
     if (isCluster) {
-      icon = await MarkerGenerator.createClusterMarker(cluster.count);
+      icon = await MarkerGenerator.createClusterMarker(
+        cluster.count,
+        isDarkMode,
+      );
     } else {
       final shop = cluster.items.first.shop;
       final bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
-      icon = await MarkerGenerator.createShopMarker(isOpen);
+      icon = await MarkerGenerator.createShopMarker(isOpen, isDarkMode);
     }
 
     return Marker(
@@ -108,12 +112,10 @@ class _TobaccoMapState extends State<TobaccoMap> {
       icon: icon,
       onTap: () {
         if (isCluster) {
-          // Ha klaszterre kattint, ráközelít
           _mapController?.animateCamera(
             CameraUpdate.newLatLngZoom(cluster.location, 16.5),
           );
         } else {
-          // Ha boltra kattint, megnyílik az ablak
           widget.onShopSelected(cluster.items.first.shop);
         }
       },
@@ -122,10 +124,16 @@ class _TobaccoMapState extends State<TobaccoMap> {
 
   @override
   Widget build(BuildContext context) {
-    // Sötét vagy világos mód detektálása a rendszerből
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    // ÚJ SOR: Ez kényszeríti a térképet, hogy azonnal váltson stílust, ha a téma változik!
+    // Ha megváltozott a téma (pl. a beállításokban), kényszerítjük a klaszterezőt a markerek újrarajzolására!
+    if (_lastIsDarkMode != null && _lastIsDarkMode != isDarkMode) {
+      _lastIsDarkMode = isDarkMode;
+      Future.microtask(() => _manager.setItems(_getClusterItems()));
+    } else {
+      _lastIsDarkMode = isDarkMode;
+    }
+
     _mapController?.setMapStyle(
       isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
     );
@@ -140,20 +148,18 @@ class _TobaccoMapState extends State<TobaccoMap> {
         _mapController = controller;
         _manager.setMapId(controller.mapId);
 
-        // Szólunk a HomeScreen-nek, hogy elkészült a térkép, és odaadjuk a vezérlőt!
         if (widget.onMapCreated != null) {
           widget.onMapCreated!(controller);
         }
       },
       onCameraMove: (CameraPosition position) {
-        _manager.onCameraMove(position); // 1. Szólunk a klaszterezőnek
+        _manager.onCameraMove(position);
         if (widget.onCameraMove != null) {
-          widget.onCameraMove!(position); // 2. Szólunk a HomeScreen-nek
+          widget.onCameraMove!(position);
         }
       },
       onCameraIdle: _manager.updateMap,
 
-      // Saját UI elemek megtartása: kikapcsoljuk a beépített gombokat
       myLocationEnabled: widget.myPosition != null,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
