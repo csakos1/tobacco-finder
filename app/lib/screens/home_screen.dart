@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // --- ÚJ: Az aktuális szűrő ---
   ShopFilter _currentFilter = ShopFilter.none;
+  bool isMapReady = false;
 
   @override
   void dispose() {
@@ -150,6 +151,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       setState(() {
         isLoading = false;
       });
+      // ÚJ: Ha megvan a pozíció, a "függöny" alatt azonnal odamozgatjuk a kamerát!
+      if (myPosition != null) {
+        _animatedMapMove(myPosition!, 15.0);
+      }
     }
 
     // 4. HÁTTÉRFOLYAMAT: Ha csak cache pozíciónk volt, kérjünk pontosabbat
@@ -413,85 +418,110 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ],
       ),
 
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              // <--- ÚJ: Stack-be tettük, hogy lebegő indikátort mutathassunk
-              children: [
-                IndexedStack(
-                  index: _selectedIndex,
-                  children: [
-                    // 0. index: Térkép
-                    TobaccoMap(
-                      shops: _filteredShops, // <-- Szűrt listát kap!
-                      myPosition: myPosition,
-                      mapCenter: mapCenter,
-                      //mapController: _mapController,
-                      onShopSelected: _showShopDetails,
-                      //onPositionChanged: _onMapPositionChanged,
-                      onCameraMove: _onMapPositionChanged,
-                      onMapCreated: (controller) {
-                        mapController = controller;
-                      },
-                    ),
-                    // 1. index: Lista
-                    ShopList(
-                      shops: _filteredShops, // <-- Szűrt listát kap!
-                      myPosition: myPosition,
-                      onShopSelected: _onShopSelectedFromList,
-                      // --- ÚJ PARAMÉTEREK ---
-                      currentFilter: _currentFilter,
-                      onFilterChanged: (ShopFilter newFilter) {
-                        setState(() {
-                          _currentFilter = newFilter;
-                        });
-                      },
-                    ),
-                  ],
-                ),
+      // KIVETTÜK az isLoading feltételt a Stack elől!
+      // A térkép azonnal épül a háttérben.
+      body: Stack(
+        children: [
+          // 1. RÉTEG: A tényleges tartalom (Térkép vagy Lista)
+          IndexedStack(
+            index: _selectedIndex,
+            children: [
+              // 0. index: Térkép
+              TobaccoMap(
+                shops: _filteredShops, // <-- Szűrt listát kap!
+                myPosition: myPosition,
+                mapCenter: mapCenter,
+                onShopSelected: _showShopDetails,
+                onCameraMove: _onMapPositionChanged,
+                onMapCreated: (controller) {
+                  mapController = controller;
+                  // ÚJ: A térkép felépült. Adunk neki egy pici időt a csempék
+                  // betöltésére a háttérben, majd levesszük a függönyt.
+                  Future.delayed(const Duration(milliseconds: 1600), () {
+                    if (mounted) {
+                      setState(() {
+                        isMapReady = true;
+                      });
+                    }
+                  });
+                },
+              ),
+              // 1. index: Lista
+              ShopList(
+                shops: _filteredShops, // <-- Szűrt listát kap!
+                myPosition: myPosition,
+                onShopSelected: _onShopSelectedFromList,
+                // --- ÚJ PARAMÉTEREK ---
+                currentFilter: _currentFilter,
+                onFilterChanged: (ShopFilter newFilter) {
+                  setState(() {
+                    _currentFilter = newFilter;
+                  });
+                },
+              ),
+            ],
+          ),
 
-                // ÚJ: Elegáns kis lebegő indikátor, ha a háttérben töltünk be új várost
-                if (_isFetchingArea && _selectedIndex == 0)
-                  Positioned(
-                    top: 16,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 6,
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            SizedBox(width: 12),
-                            Text(
-                              "Új boltok keresése...",
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+          // 2. RÉTEG: Elegáns kis lebegő indikátor, ha a háttérben töltünk be új várost
+          if (_isFetchingArea && _selectedIndex == 0)
+            Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
                   ),
-              ],
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        "Új boltok keresése...",
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
+
+          // 3. RÉTEG: A FŐ TÖLTŐKÉPERNYŐ ("A Függöny")
+          // Ez garantálja, hogy sosem látsz egymás után két külön töltőképernyőt.
+          // Ez az egyetlen indikátor van a képernyőn app induláskor.
+          AnimatedOpacity(
+            // Csak akkor halványítjuk el (opacity: 0.0), ha már VAN adat ÉS a térkép is kirajzolódott
+            opacity: (isLoading || !isMapReady) ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+            child: IgnorePointer(
+              // Ha eltűnt, átengedjük a kattintásokat a térképre!
+              ignoring: !(isLoading || !isMapReady),
+              child: Container(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          ),
+        ],
+      ),
 
       floatingActionButton: _selectedIndex == 0
           ? FloatingActionButton(

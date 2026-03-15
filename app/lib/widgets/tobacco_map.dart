@@ -139,6 +139,9 @@ class _TobaccoMapState extends State<TobaccoMap> {
     );
 
     return GoogleMap(
+      // ÚJ: Közvetlenül itt adjuk át a stílust, így a legelső kirajzolás is sötét lesz!
+      style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+
       initialCameraPosition: CameraPosition(
         target: widget.mapCenter,
         zoom: 15.0,
@@ -147,6 +150,11 @@ class _TobaccoMapState extends State<TobaccoMap> {
       onMapCreated: (GoogleMapController controller) {
         _mapController = controller;
         _manager.setMapId(controller.mapId);
+
+        // ÚJ: AZONNAL ráhúzzuk a stílust a létrehozás pillanatában!
+        controller.setMapStyle(
+          isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+        );
 
         if (widget.onMapCreated != null) {
           widget.onMapCreated!(controller);
