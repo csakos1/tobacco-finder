@@ -1,15 +1,14 @@
+// app/lib/widgets/shop_list.dart
 import 'package:flutter/material.dart';
-//import 'package:latlong2/latlong.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import '../models/shop.dart';
 import '../utils/shop_logic.dart';
 import 'opening_hours_widget.dart';
-import '../screens/home_screen.dart'; // Ebből vesszük az enumot (ShopFilter)
+import '../controllers/home_controller.dart';
 
 class ShopList extends StatefulWidget {
   final List<Shop> shops;
-  final LatLng? myPosition;
+  final String Function(Shop)
+  getDistanceText; // <-- ÚJ: Ezt kapja a Controllertől
   final Function(Shop) onShopSelected;
   final ShopFilter currentFilter;
   final Function(ShopFilter) onFilterChanged;
@@ -17,7 +16,7 @@ class ShopList extends StatefulWidget {
   const ShopList({
     super.key,
     required this.shops,
-    required this.myPosition,
+    required this.getDistanceText,
     required this.onShopSelected,
     required this.currentFilter,
     required this.onFilterChanged,
@@ -28,7 +27,6 @@ class ShopList extends StatefulWidget {
 }
 
 class _ShopListState extends State<ShopList> {
-  // A distanceCalculator sort KIKUKÁZTUK!
   String? _expandedShopId;
 
   @override
@@ -37,27 +35,8 @@ class _ShopListState extends State<ShopList> {
     final textTheme = Theme.of(context).textTheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    List<Shop> sortedShops = List.from(widget.shops);
-
-    if (widget.myPosition != null) {
-      sortedShops.sort((a, b) {
-        if (a.lat == null || a.long == null) return 1;
-        if (b.lat == null || b.long == null) return -1;
-        double distA = Geolocator.distanceBetween(
-          widget.myPosition!.latitude,
-          widget.myPosition!.longitude,
-          a.lat!,
-          a.long!,
-        );
-        double distB = Geolocator.distanceBetween(
-          widget.myPosition!.latitude,
-          widget.myPosition!.longitude,
-          b.lat!,
-          b.long!,
-        );
-        return distA.compareTo(distB);
-      });
-    }
+    // KIVETTÜK A RENDEZÉSI LOGIKÁT!
+    // A widget.shops már alapból távolság szerint rendezve érkezik a Controllertől.
 
     return CustomScrollView(
       slivers: [
@@ -65,13 +44,10 @@ class _ShopListState extends State<ShopList> {
         SliverAppBar(
           pinned: true,
           floating: false,
-          primary:
-              false, // <-- FONTOS: Mivel van már egy AppBar felül, ez ne tegyen be status bar üres helyet
+          primary: false,
           automaticallyImplyLeading: false,
           titleSpacing: 0,
           toolbarHeight: 56,
-          // Szándékosan NINCS backgroundColor és surfaceTintColor megadva!
-          // Így hajszálpontosan a fő AppBar (Theme) színét fogja felvenni görgetéskor.
           title: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
@@ -111,9 +87,9 @@ class _ShopListState extends State<ShopList> {
                 ),
                 const SizedBox(width: 12),
 
-                // "0-24" gomb
+                // "0-24" gomb (A korábban javított fix szélességgel!)
                 FilterChip(
-                  label: const Text("0-24"),
+                  label: const SizedBox(width: 32, child: Text("0-24")),
                   selected: widget.currentFilter == ShopFilter.nonStop,
                   showCheckmark: false,
                   avatar: Icon(
@@ -150,7 +126,7 @@ class _ShopListState extends State<ShopList> {
         ),
 
         // --- 2. GÖRGETHETŐ LISTA ---
-        if (sortedShops.isEmpty)
+        if (widget.shops.isEmpty)
           const SliverFillRemaining(
             child: Center(child: Text("Nincs a feltételeknek megfelelő bolt.")),
           )
@@ -162,23 +138,11 @@ class _ShopListState extends State<ShopList> {
             ),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate((context, index) {
-                final shop = sortedShops[index];
+                final shop = widget.shops[index];
                 bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
-                String distanceText = "";
-                if (widget.myPosition != null &&
-                    shop.lat != null &&
-                    shop.long != null) {
-                  double dist = Geolocator.distanceBetween(
-                    widget.myPosition!.latitude,
-                    widget.myPosition!.longitude,
-                    shop.lat!,
-                    shop.long!,
-                  );
-                  distanceText = dist > 1000
-                      ? "${(dist / 1000).toStringAsFixed(1)} km"
-                      : "${dist.round()} m";
-                }
+                // ÚJ, LETISZTULT LOGIKA: Csak megkérjük a Controllert, hogy adja ide a kész szöveget
+                String distanceText = widget.getDistanceText(shop);
 
                 // --- SZÍNEK ---
                 Color statusBgColor;
@@ -402,7 +366,7 @@ class _ShopListState extends State<ShopList> {
                     ],
                   ),
                 );
-              }, childCount: sortedShops.length),
+              }, childCount: widget.shops.length),
             ),
           ),
       ],
