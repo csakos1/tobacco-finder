@@ -7,6 +7,7 @@ import '../widgets/shop_list.dart';
 import '../widgets/shop_details_modal.dart';
 import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
+import '../widgets/place_search_bar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -110,6 +111,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
 
+              // --- ÚJ RÉTEG: Keresősáv (Csak a térkép nézetben látszik) ---
+              if (_controller.selectedIndex == 0)
+                Positioned(
+                  top: 16, // Kicsit lejjebb az AppBar-tól
+                  left: 16,
+                  right: 16,
+                  child: PlaceSearchBar(
+                    onPlaceSelected: (LatLng location) {
+                      // Ha kiválasztottak egy várost, átrepülünk oda!
+                      // A controller beépített kameramozgatója automatikusan lehúzza majd a boltokat az új helyen.
+                      _controller.animatedMapMove(location, 14.0);
+                    },
+                  ),
+                ),
+
               // 2. RÉTEG: Keresés indikátor a térképen
               if (_controller.isFetchingArea && _controller.selectedIndex == 0)
                 Positioned(
@@ -177,70 +193,71 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: _controller.errorMessage != null
                           ? // --- HIBA UI ---
                             Center(
-                              key: const ValueKey(
-                                'error_view',
-                              ), // Fontos az AnimatedSwitcher-nek
-                              child: Padding(
-                                padding: const EdgeInsets.all(32.0),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.wifi_off_rounded,
-                                      size: 80,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.error.withOpacity(0.8),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    Text(
-                                      _controller.errorMessage!,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.5,
+                              key: const ValueKey('error_view'),
+                              // 1. VÉDŐVONAL: SingleChildScrollView meggátolja az animáció alatti "összenyomódásból" fakadó piros képernyőt
+                              child: SingleChildScrollView(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.wifi_off_rounded,
+                                        size: 80,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error.withOpacity(0.8),
                                       ),
-                                    ),
-                                    const SizedBox(height: 32),
-                                    ElevatedButton.icon(
-                                      onPressed: _controller.retryInitialLoad,
-                                      icon: const Icon(Icons.refresh_rounded),
-                                      label: const Text(
-                                        "Újrapróbálkozás",
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
+                                      const SizedBox(height: 24),
+                                      Text(
+                                        // 2. VÉDŐVONAL: Biztonságos null-kezelés
+                                        _controller.errorMessage ??
+                                            "Ismeretlen hiba történt.",
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w500,
+                                          height: 1.5,
                                         ),
                                       ),
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 24,
-                                          vertical: 14,
+                                      const SizedBox(height: 32),
+                                      ElevatedButton.icon(
+                                        onPressed: _controller.retryInitialLoad,
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        label: const Text(
+                                          "Újrapróbálkozás",
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                        foregroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.onPrimary,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            20,
+                                        style: ElevatedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 24,
+                                            vertical: 14,
+                                          ),
+                                          backgroundColor: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                          foregroundColor: Theme.of(
+                                            context,
+                                          ).colorScheme.onPrimary,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             )
                           : // --- TÖLTŐ UI ---
                             const Center(
-                              key: ValueKey(
-                                'loading_view',
-                              ), // Fontos az AnimatedSwitcher-nek
+                              key: ValueKey('loading_view'),
                               child: CircularProgressIndicator(),
                             ),
                     ),
