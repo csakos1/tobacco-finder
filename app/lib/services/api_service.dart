@@ -50,7 +50,7 @@ class ApiService {
       }
     } catch (e) {
       print("API Hiba (fetchNearby): $e");
-      return [];
+      throw Exception('Nem sikerült csatlakozni a szerverhez.');
     }
   }
 

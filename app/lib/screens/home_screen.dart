@@ -16,7 +16,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Itt példányosítjuk a logikát tartalmazó controllert
   late final HomeController _controller;
 
   @override
@@ -60,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // A ListenableBuilder figyeli a Controllert, és csak akkor frissíti a UI-t, ha szükséges
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
@@ -104,7 +102,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   ShopList(
                     shops: _controller.filteredShops,
-                    // A myPosition helyett most már csak a formázó függvényt adjuk át!
                     getDistanceText: _controller.getFormattedDistance,
                     onShopSelected: _onShopSelectedFromList,
                     currentFilter: _controller.currentFilter,
@@ -113,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
 
-              // 2. RÉTEG: Keresés indikátor
+              // 2. RÉTEG: Keresés indikátor a térképen
               if (_controller.isFetchingArea && _controller.selectedIndex == 0)
                 Positioned(
                   top: 16,
@@ -154,25 +151,109 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              // 3. RÉTEG: Kezdeti töltőképernyő ("A Függöny")
+              // 3. RÉTEG: Közös Töltő és Hiba Képernyő ("A Függöny")
+              // Ez egyetlen átlátszatlan réteg, ami addig takarja a térképet, amíg töltünk VAGY hiba van.
               AnimatedOpacity(
-                opacity: (_controller.isLoading || !_controller.isMapReady)
+                opacity:
+                    (_controller.isLoading ||
+                        !_controller.isMapReady ||
+                        _controller.errorMessage != null)
                     ? 1.0
                     : 0.0,
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeInOut,
                 child: IgnorePointer(
-                  ignoring: !(_controller.isLoading || !_controller.isMapReady),
+                  ignoring:
+                      !(_controller.isLoading ||
+                          !_controller.isMapReady ||
+                          _controller.errorMessage != null),
                   child: Container(
                     color: Theme.of(context).scaffoldBackgroundColor,
-                    child: const Center(child: CircularProgressIndicator()),
+                    width: double.infinity,
+                    height: double.infinity,
+                    // Az AnimatedSwitcher elegánsan "átúsztatja" a hibaüzenetet a pörgő karikába
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: _controller.errorMessage != null
+                          ? // --- HIBA UI ---
+                            Center(
+                              key: const ValueKey(
+                                'error_view',
+                              ), // Fontos az AnimatedSwitcher-nek
+                              child: Padding(
+                                padding: const EdgeInsets.all(32.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.wifi_off_rounded,
+                                      size: 80,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error.withOpacity(0.8),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    Text(
+                                      _controller.errorMessage!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 32),
+                                    ElevatedButton.icon(
+                                      onPressed: _controller.retryInitialLoad,
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      label: const Text(
+                                        "Újrapróbálkozás",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 24,
+                                          vertical: 14,
+                                        ),
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        foregroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimary,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : // --- TÖLTŐ UI ---
+                            const Center(
+                              key: ValueKey(
+                                'loading_view',
+                              ), // Fontos az AnimatedSwitcher-nek
+                              child: CircularProgressIndicator(),
+                            ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
 
-          floatingActionButton: _controller.selectedIndex == 0
+          // Ha hiba van, a GPS gombot is elrejtjük
+          floatingActionButton:
+              (_controller.selectedIndex == 0 &&
+                  _controller.errorMessage == null)
               ? FloatingActionButton(
                   onPressed: _controller.isLocating
                       ? null
@@ -202,23 +283,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               : null,
 
-          bottomNavigationBar: NavigationBar(
-            height: 65,
-            selectedIndex: _controller.selectedIndex,
-            onDestinationSelected: _controller.setSelectedIndex,
-            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-            destinations: const <Widget>[
-              NavigationDestination(
-                selectedIcon: Icon(Icons.map),
-                icon: Icon(Icons.map_outlined),
-                label: 'Térkép',
-              ),
-              NavigationDestination(
-                selectedIcon: Icon(Icons.view_list),
-                icon: Icon(Icons.view_list_outlined),
-                label: 'Lista',
-              ),
-            ],
+          // Ha hiba van, az alsó navigációt nem lehet kattintani
+          bottomNavigationBar: IgnorePointer(
+            ignoring: _controller.errorMessage != null,
+            child: NavigationBar(
+              height: 65,
+              selectedIndex: _controller.selectedIndex,
+              onDestinationSelected: _controller.setSelectedIndex,
+              labelBehavior:
+                  NavigationDestinationLabelBehavior.onlyShowSelected,
+              destinations: const <Widget>[
+                NavigationDestination(
+                  selectedIcon: Icon(Icons.map),
+                  icon: Icon(Icons.map_outlined),
+                  label: 'Térkép',
+                ),
+                NavigationDestination(
+                  selectedIcon: Icon(Icons.view_list),
+                  icon: Icon(Icons.view_list_outlined),
+                  label: 'Lista',
+                ),
+              ],
+            ),
           ),
         );
       },

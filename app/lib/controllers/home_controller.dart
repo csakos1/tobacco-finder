@@ -20,6 +20,10 @@ class HomeController extends ChangeNotifier {
   // Állapotváltozók (State)
   List<Shop> shops = [];
   bool isLoading = true;
+
+  // --- ÚJ: Hibaüzenet állapota ---
+  String? errorMessage;
+
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
 
@@ -44,7 +48,6 @@ class HomeController extends ChangeNotifier {
     super.dispose();
   }
 
-  // Szűrt lista lekérése
   List<Shop> get filteredShops {
     if (currentFilter == ShopFilter.openNow) {
       return shops.where((s) => ShopLogic.isOpenNow(s.openingHours)).toList();
@@ -97,7 +100,20 @@ class HomeController extends ChangeNotifier {
     });
   }
 
+  // --- ÚJ: Újrapróbálkozás metódus a UI gombjának ---
+  Future<void> retryInitialLoad() async {
+    if (isLoading)
+      return; // <-- EZT A SORT ADD HOZZÁ: Ha már tölt, ne csináljon semmit!
+
+    errorMessage = null;
+    isLoading = true;
+    notifyListeners();
+    await _firstLoad();
+  }
+
   Future<void> _firstLoad() async {
+    errorMessage = null; // Induláskor nincs hiba
+
     LatLng? initialPosition;
     try {
       initialPosition = await _locationService.getLastKnownPosition();
@@ -131,21 +147,25 @@ class HomeController extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint("Bolt letöltési hiba: $e");
+      // --- ÚJ: Ha elszáll az API, beállítjuk a hibaüzenetet! ---
+      errorMessage =
+          "Sajnos nem sikerült letölteni a boltokat.\nKérjük, ellenőrizd az internetkapcsolatot!";
     }
 
-    if (myPosition != null) {
+    if (myPosition != null && errorMessage == null) {
       _sortShopsByDistance();
     }
 
     if (!_isDisposed) {
       isLoading = false;
       notifyListeners();
-      if (myPosition != null) {
+      if (myPosition != null && errorMessage == null) {
         animatedMapMove(myPosition!, 15.0);
       }
     }
 
-    if (myPosition != null) {
+    // Csak akkor kérünk friss GPS-t a háttérben, ha nem volt hiba
+    if (myPosition != null && errorMessage == null) {
       _locationService
           .determinePosition()
           .then((LatLng? freshPosition) async {
@@ -158,16 +178,18 @@ class HomeController extends ChangeNotifier {
               );
 
               if (distMoved > 500) {
-                shops = await _apiService.fetchNearby(
-                  freshPosition.latitude,
-                  freshPosition.longitude,
-                );
-                myPosition = freshPosition;
-                _sortShopsByDistance();
-                notifyListeners();
-                if (selectedIndex == 0) {
-                  animatedMapMove(freshPosition, 15.0);
-                }
+                try {
+                  shops = await _apiService.fetchNearby(
+                    freshPosition.latitude,
+                    freshPosition.longitude,
+                  );
+                  myPosition = freshPosition;
+                  _sortShopsByDistance();
+                  notifyListeners();
+                  if (selectedIndex == 0) {
+                    animatedMapMove(freshPosition, 15.0);
+                  }
+                } catch (_) {}
               } else {
                 myPosition = freshPosition;
                 _sortShopsByDistance();
@@ -215,7 +237,7 @@ class HomeController extends ChangeNotifier {
         }
       }
     } catch (e) {
-      onError(); // Szólunk a UI-nak, hogy mutassa a SnackBart
+      onError();
     } finally {
       if (!_isDisposed) {
         isLocating = false;
@@ -262,6 +284,7 @@ class HomeController extends ChangeNotifier {
       _lastFetchPosition = newCenter;
     } catch (e) {
       debugPrint("Hiba a terület keresésekor: $e");
+      // Ide esetleg később tehetünk egy kis "Toast" értesítést
     } finally {
       if (!_isDisposed) {
         isFetchingArea = false;
@@ -281,17 +304,14 @@ class HomeController extends ChangeNotifier {
     }
   }
 
-  // Távolság kiszámítása és formázása a UI számára
   String getFormattedDistance(Shop shop) {
     if (myPosition == null || shop.lat == null || shop.long == null) return "";
-
     final double dist = Geolocator.distanceBetween(
       myPosition!.latitude,
       myPosition!.longitude,
       shop.lat!,
       shop.long!,
     );
-
     return dist > 1000
         ? "${(dist / 1000).toStringAsFixed(1)} km"
         : "${dist.round()} m";
