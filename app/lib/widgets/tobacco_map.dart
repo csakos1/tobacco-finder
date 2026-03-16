@@ -124,9 +124,10 @@ class _TobaccoMapState extends State<TobaccoMap> {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-    // Ha megváltozott a téma (pl. a beállításokban), kényszerítjük a klaszterezőt a markerek újrarajzolására!
+    // Ha megváltozott a téma, kényszerítjük a klaszterezőt a markerek újrarajzolására
     if (_lastIsDarkMode != null && _lastIsDarkMode != isDarkMode) {
       _lastIsDarkMode = isDarkMode;
       Future.microtask(() => _manager.setItems(_getClusterItems()));
@@ -138,40 +139,69 @@ class _TobaccoMapState extends State<TobaccoMap> {
       isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
     );
 
-    return GoogleMap(
-      // ÚJ: Közvetlenül itt adjuk át a stílust, így a legelső kirajzolás is sötét lesz!
-      style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+    // --- Színek dinamikus lekérése ---
 
-      initialCameraPosition: CameraPosition(
-        target: widget.mapCenter,
-        zoom: 15.0,
+    // JAVÍTÁS: A Material 3 AppBar alapértelmezetten a 'surface' színt használja,
+    // ami világos módban kaphat egy minimális árnyalatot a seedColor-ból (nem tiszta fehér).
+    final topColor =
+        theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
+
+    final bottomColor =
+        theme.navigationBarTheme.backgroundColor ??
+        theme.colorScheme.surfaceContainer;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [topColor, topColor, bottomColor, bottomColor],
+          stops: const [0.0, 0.5, 0.5, 1.0],
+        ),
       ),
-      markers: _markers,
-      onMapCreated: (GoogleMapController controller) {
-        _mapController = controller;
-        _manager.setMapId(controller.mapId);
+      // 30px-es lekerekítés marad
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30.0),
+        child: GoogleMap(
+          style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+          initialCameraPosition: CameraPosition(
+            target: widget.mapCenter,
+            zoom: 15.0,
+          ),
+          markers: _markers,
 
-        // ÚJ: AZONNAL ráhúzzuk a stílust a létrehozás pillanatában!
-        controller.setMapStyle(
-          isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
-        );
+          // --- Frissített padding beállítások a Google logóhoz ---
+          padding: const EdgeInsets.only(
+            bottom: 10.0, // Az általad megadott érték (lejjebb)
+            left: 12.0, // Az általad megadott érték (jobbra)
+            top: 16.0,
+          ),
 
-        if (widget.onMapCreated != null) {
-          widget.onMapCreated!(controller);
-        }
-      },
-      onCameraMove: (CameraPosition position) {
-        _manager.onCameraMove(position);
-        if (widget.onCameraMove != null) {
-          widget.onCameraMove!(position);
-        }
-      },
-      onCameraIdle: _manager.updateMap,
+          onMapCreated: (GoogleMapController controller) {
+            _mapController = controller;
+            _manager.setMapId(controller.mapId);
 
-      myLocationEnabled: widget.myPosition != null,
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
+            controller.setMapStyle(
+              isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+            );
+
+            if (widget.onMapCreated != null) {
+              widget.onMapCreated!(controller);
+            }
+          },
+          onCameraMove: (CameraPosition position) {
+            _manager.onCameraMove(position);
+            if (widget.onCameraMove != null) {
+              widget.onCameraMove!(position);
+            }
+          },
+          onCameraIdle: _manager.updateMap,
+          myLocationEnabled: widget.myPosition != null,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          mapToolbarEnabled: false,
+        ),
+      ),
     );
   }
 }
