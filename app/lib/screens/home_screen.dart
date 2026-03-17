@@ -60,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
@@ -267,9 +268,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // Ha hiba van, a GPS gombot is elrejtjük
+          // Ha hiba van, VAGY nyitva a billentyűzet, a GPS gombot elrejtjük
           floatingActionButton:
-              (_controller.selectedIndex == 0 &&
+              (!isKeyboardOpen &&
+                  _controller.selectedIndex == 0 &&
                   _controller.errorMessage == null)
               ? FloatingActionButton(
                   onPressed: _controller.isLocating
