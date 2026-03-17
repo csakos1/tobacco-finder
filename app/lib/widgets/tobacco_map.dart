@@ -25,6 +25,9 @@ class TobaccoMap extends StatefulWidget {
   final void Function(CameraPosition)? onCameraMove;
   final void Function(GoogleMapController)? onMapCreated;
 
+  // --- ÚJ: Paraméter a billentyűzet magasságának átvételéhez ---
+  final double bottomPadding;
+
   const TobaccoMap({
     super.key,
     required this.shops,
@@ -33,6 +36,7 @@ class TobaccoMap extends StatefulWidget {
     required this.onShopSelected,
     this.onCameraMove,
     this.onMapCreated,
+    this.bottomPadding = 0.0, // Alapértelmezetten 0
   });
 
   @override
@@ -170,10 +174,11 @@ class _TobaccoMapState extends State<TobaccoMap> {
           ),
           markers: _markers,
 
-          // --- Frissített padding beállítások a Google logóhoz ---
-          padding: const EdgeInsets.only(
-            bottom: 10.0, // Az általad megadott érték (lejjebb)
-            left: 12.0, // Az általad megadott érték (jobbra)
+          // --- ÚJ: Dinamikus padding beállítás ---
+          padding: EdgeInsets.only(
+            // Hozzáadjuk a billentyűzet magasságát a Google logó térközéhez!
+            bottom: 10.0 + widget.bottomPadding,
+            left: 12.0,
             top: 16.0,
           ),
 

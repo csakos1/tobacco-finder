@@ -150,7 +150,7 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
                 radius: const Radius.circular(8),
                 thickness: 4,
                 child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 16.0),
+                  padding: const EdgeInsets.only(bottom: 8.0),
                   shrinkWrap: true,
                   physics: const BouncingScrollPhysics(),
                   keyboardDismissBehavior:

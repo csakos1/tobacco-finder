@@ -61,12 +61,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bool isKeyboardOpen = bottomInset > 0;
+
+    final double mapBottomPadding = isKeyboardOpen
+        ? math.max(0.0, bottomInset - 90.0)
+        : 0.0;
 
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
         return Scaffold(
+          // --- ÚJ: Kikapcsoljuk a natív, akadós összenyomást! ---
+          resizeToAvoidBottomInset: false,
           appBar: AppBar(
             scrolledUnderElevation: _controller.selectedIndex == 0 ? 0.0 : null,
             title: const Text(
@@ -107,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onShopSelected: _showShopDetails,
                         onCameraMove: _controller.onMapPositionChanged,
                         onMapCreated: _controller.setMapController,
+                        bottomPadding: mapBottomPadding,
                       ),
                       ShopList(
                         shops: _controller.filteredShops,
@@ -147,8 +155,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       left: 16,
                       right: 16,
                       child: PlaceSearchBar(
-                        // A teljes szabad magasság mínusz 32px (16 felülre, 16 alulra)
-                        maxAvailableHeight: constraints.maxHeight - 32.0,
+                        // --- ÚJ: Levonjuk a billentyűzet magasságát a maximális magasságból! ---
+                        maxAvailableHeight:
+                            constraints.maxHeight - 32.0 - bottomInset,
                         onPlaceSelected: (LatLng location) {
                           _controller.animatedMapMove(location, 14.0);
                         },
