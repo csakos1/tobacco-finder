@@ -200,6 +200,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
+          compassEnabled: false, // <-- ÚJ SOR: Kikapcsoljuk a gyári iránytűt
         ),
       ),
     );

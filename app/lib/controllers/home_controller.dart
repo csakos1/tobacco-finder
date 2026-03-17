@@ -27,6 +27,14 @@ class HomeController extends ChangeNotifier {
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
 
+  // --- ÚJ: Iránytű és kamera állapotok ---
+  double mapBearing = 0.0;
+  double currentZoom = 15.0;
+  LatLng currentTarget = const LatLng(47.50712, 19.04557);
+
+  // Getter: Megnézzük, hogy el van-e forgatva a térkép (nem 0 fokon áll)
+  bool get isMapRotated => mapBearing > 0.5 && mapBearing < 359.5;
+
   int selectedIndex = 0;
   bool isLocating = false;
   bool isFetchingArea = false;
@@ -132,6 +140,7 @@ class HomeController extends ChangeNotifier {
     if (initialPosition != null) {
       myPosition = initialPosition;
       mapCenter = initialPosition;
+      currentTarget = initialPosition; // <-- ÚJ SOR
     }
 
     try {
@@ -247,10 +256,40 @@ class HomeController extends ChangeNotifier {
   }
 
   void onMapPositionChanged(CameraPosition position) {
+    // --- ÚJ: Kamera adatainak mentése és forgás figyelése ---
+    currentTarget = position.target;
+    currentZoom = position.zoom;
+
+    // Csak akkor frissítjük az UI-t, ha tényleg fordult a térkép
+    if ((mapBearing - position.bearing).abs() > 0.5) {
+      mapBearing = position.bearing;
+      notifyListeners();
+    }
+    // ---------------------------------------------------------
+
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 800), () {
       _fetchMapArea(position.target);
     });
+  }
+
+  // --- ÚJ: Saját iránytű kattintás logika ---
+  Future<void> resetCompass() async {
+    if (mapController == null) return;
+    try {
+      await mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: currentTarget, // Ott maradunk, ahol vagyunk
+            zoom: currentZoom, // Olyan közelről, ahogy voltunk
+            bearing: 0.0, // Vissza Északra!
+            tilt: 0.0, // Extra: A 3D dőlést is alaphelyzetbe tesszük
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint("Iránytű hiba: $e");
+    }
   }
 
   Future<void> _fetchMapArea(LatLng newCenter) async {

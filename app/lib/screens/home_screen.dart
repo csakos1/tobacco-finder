@@ -8,6 +8,7 @@ import '../widgets/shop_details_modal.dart';
 import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/place_search_bar.dart';
+import 'dart:math' as math; // <-- ÚJ IMPORT a fájl tetejére
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -116,6 +117,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+
+                  // --- ÚJ RÉTEG: Material 3 Iránytű ---
+                  // Csak akkor jelenik meg, ha a térkép el van forgatva
+                  if (_controller.selectedIndex == 0 &&
+                      _controller.isMapRotated)
+                    Positioned(
+                      top: 88, // A keresősáv alá pozicionáljuk
+                      left: 16, // Bal felülre
+                      child: FloatingActionButton.small(
+                        heroTag:
+                            'compass_fab', // Konfliktus elkerülése a GPS gombbal
+                        onPressed: _controller.resetCompass,
+                        backgroundColor: Theme.of(context).colorScheme.surface,
+                        foregroundColor: Theme.of(context).colorScheme.primary,
+                        elevation: 4,
+                        // Itt történik a varázslat: az ikont ellentétesen forgatjuk a térképpel!
+                        child: Transform.rotate(
+                          angle: -_controller.mapBearing * (math.pi / 180),
+                          child: const Icon(Icons.navigation_rounded, size: 22),
+                        ),
+                      ),
+                    ),
 
                   // --- Keresősáv ---
                   if (_controller.selectedIndex == 0)
