@@ -14,7 +14,7 @@ class GeocodingService {
         'https://photon.komoot.io/api/',
         queryParameters: {
           'q': '$query, Magyarország',
-          'limit': 5,
+          'limit': 15,
           // A lang paramétert szándékosan kivettük, mert a Photon API
           // nyilvános szervere nem támogatja a 'hu' kódot és 400-as hibát dob!
         },

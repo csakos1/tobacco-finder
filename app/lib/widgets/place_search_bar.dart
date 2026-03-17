@@ -7,8 +7,13 @@ import '../services/geocoding_service.dart';
 
 class PlaceSearchBar extends StatefulWidget {
   final Function(LatLng) onPlaceSelected;
+  final double maxAvailableHeight; // <-- ÚJ: Ezt fogja megkapni a főképernyőtől
 
-  const PlaceSearchBar({super.key, required this.onPlaceSelected});
+  const PlaceSearchBar({
+    super.key,
+    required this.onPlaceSelected,
+    required this.maxAvailableHeight, // <-- ÚJ
+  });
 
   @override
   State<PlaceSearchBar> createState() => _PlaceSearchBarState();
@@ -66,70 +71,108 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SearchBar(
-          controller: _controller,
-          focusNode: _focusNode,
-          // --- UI VÁLTOZTATÁS: Belső margók a sávnak ---
-          padding: const WidgetStatePropertyAll<EdgeInsets>(
-            EdgeInsets.only(left: 16.0, right: 16.0),
-          ),
-          // --- UI VÁLTOZTATÁS: A nagyító ikon beljebb tolása ---
-          leading: const Padding(
-            padding: EdgeInsets.only(left: 12.0, right: 8.0),
-            child: Icon(Icons.search),
-          ),
-          hintText: 'Keress városra, címre...',
-          elevation: const WidgetStatePropertyAll<double>(4.0),
-          onChanged: _onSearchChanged,
-          trailing: [
-            if (_isLoading)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else if (_controller.text.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _controller.clear();
-                  _onSearchChanged('');
-                  _focusNode.unfocus();
-                },
-              ),
-          ],
-        ),
+    return ConstrainedBox(
+      // --- ÚJ: A külső maximum magasságot itt állítjuk be ---
+      constraints: BoxConstraints(maxHeight: widget.maxAvailableHeight),
+      child: Column(
+        mainAxisSize:
+            MainAxisSize.min, // Csak akkora legyen a Column, amekkora muszáj
+        children: [
+          _buildSearchInput(),
+          if (_suggestions.isNotEmpty) _buildSuggestionsList(),
+        ],
+      ),
+    );
+  }
 
-        if (_suggestions.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Card(
-              elevation: 6,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: ListView.separated(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _suggestions.length,
-                separatorBuilder: (context, index) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final place = _suggestions[index];
-                  return ListTile(
-                    leading: const Icon(Icons.location_on_outlined),
-                    title: Text(place.name),
-                    subtitle: Text(place.formattedAddress),
-                    onTap: () => _selectPlace(place),
-                  );
-                },
+  Widget _buildSearchInput() {
+    return SearchBar(
+      controller: _controller,
+      focusNode: _focusNode,
+      padding: const WidgetStatePropertyAll<EdgeInsets>(
+        EdgeInsets.only(left: 16.0, right: 16.0),
+      ),
+      leading: const Padding(
+        padding: EdgeInsets.only(left: 12.0, right: 8.0),
+        child: Icon(Icons.search),
+      ),
+      hintText: 'Keress városra, címre...',
+      elevation: const WidgetStatePropertyAll<double>(4.0),
+      onChanged: _onSearchChanged,
+      trailing: [
+        if (_isLoading)
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else if (_controller.text.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear),
+            onPressed: () {
+              _controller.clear();
+              _onSearchChanged('');
+              _focusNode.unfocus();
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSuggestionsList() {
+    return Flexible(
+      // --- ÚJ: A Flexible engedi, hogy a lista dinamikusan kitöltse a rendelkezésre álló magasságot ---
+      child: Padding(
+        padding: const EdgeInsets.only(
+          top: 8.0,
+        ), // Itt már nem kell alsó margó, a LayoutBuilder megoldja
+        child: Card(
+          elevation: 6,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          clipBehavior: Clip.antiAlias,
+
+          // --- ÚJ: A NotificationListener elfogja a görgetést, így az AppBar NEM SZÍNEZŐDIK EL! ---
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) => true,
+            child: ShaderMask(
+              shaderCallback: (Rect rect) {
+                return const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black, Colors.black, Colors.transparent],
+                  stops: [0.0, 0.90, 1.0],
+                ).createShader(rect);
+              },
+              blendMode: BlendMode.dstIn,
+              child: Scrollbar(
+                radius: const Radius.circular(8),
+                thickness: 4,
+                child: ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  shrinkWrap: true,
+                  physics: const BouncingScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final place = _suggestions[index];
+                    return ListTile(
+                      leading: const Icon(Icons.location_on_outlined),
+                      title: Text(place.name),
+                      subtitle: Text(place.formattedAddress),
+                      onTap: () => _selectPlace(place),
+                    );
+                  },
+                ),
               ),
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }
