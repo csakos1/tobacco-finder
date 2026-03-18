@@ -44,6 +44,10 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Az alkalmazásnak szüksége van a helyzetedre, hogy megmutassa a legközelebbi dohányboltokat.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Az alkalmazásnak szüksége van a helyzetedre a távolságok pontos kiszámításához.</string>
 	<true/>
 </dict>
 </plist>
