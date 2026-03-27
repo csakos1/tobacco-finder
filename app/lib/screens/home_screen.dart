@@ -8,7 +8,7 @@ import '../widgets/shop_details_modal.dart';
 import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/place_search_bar.dart';
-import 'dart:math' as math; // <-- ÚJ IMPORT a fájl tetejére
+import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,7 +32,19 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// Billentyűzet és focus bezárása bárhonnan
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
   void _showShopDetails(Shop shop) {
+    // ---------------------------------------------------------------
+    // JAVÍTÁS: Mielőtt megnyitjuk a modalt, elengedjük a focus-t.
+    // Így a modal bezárásakor a SearchBar NEM kapja vissza a focus-t
+    // és a billentyűzet NEM jön fel magától.
+    // ---------------------------------------------------------------
+    _dismissKeyboard();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -61,18 +73,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final bool isKeyboardOpen = bottomInset > 0;
-
-    final double mapBottomPadding = isKeyboardOpen
-        ? math.max(0.0, bottomInset - 90.0)
-        : 0.0;
+    // ---------------------------------------------------------------
+    // NINCS MediaQuery.of(context) itt!
+    // Minden viewInsets-függő widget saját maga olvassa ki izoláltan.
+    // ---------------------------------------------------------------
 
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
         return Scaffold(
-          // --- ÚJ: Kikapcsoljuk a natív, akadós összenyomást! ---
           resizeToAvoidBottomInset: false,
           appBar: AppBar(
             scrolledUnderElevation: _controller.selectedIndex == 0 ? 0.0 : null,
@@ -114,7 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         onShopSelected: _showShopDetails,
                         onCameraMove: _controller.onMapPositionChanged,
                         onMapCreated: _controller.setMapController,
-                        bottomPadding: mapBottomPadding,
+                        bottomPadding: 0.0,
+                        // ÚJ: Térképre koppintás → billentyűzet bezárása
+                        onMapTapped: _dismissKeyboard,
                       ),
                       ShopList(
                         shops: _controller.filteredShops,
@@ -126,21 +137,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
 
-                  // --- ÚJ RÉTEG: Material 3 Iránytű ---
-                  // Csak akkor jelenik meg, ha a térkép el van forgatva
+                  // --- Iránytű ---
                   if (_controller.selectedIndex == 0 &&
                       _controller.isMapRotated)
                     Positioned(
-                      top: 88, // A keresősáv alá pozicionáljuk
-                      left: 16, // Bal felülre
+                      top: 88,
+                      left: 16,
                       child: FloatingActionButton.small(
-                        heroTag:
-                            'compass_fab', // Konfliktus elkerülése a GPS gombbal
+                        heroTag: 'compass_fab',
                         onPressed: _controller.resetCompass,
                         backgroundColor: Theme.of(context).colorScheme.surface,
                         foregroundColor: Theme.of(context).colorScheme.primary,
                         elevation: 4,
-                        // Itt történik a varázslat: az ikont ellentétesen forgatjuk a térképpel!
                         child: Transform.rotate(
                           angle: -_controller.mapBearing * (math.pi / 180),
                           child: const Icon(Icons.navigation_rounded, size: 22),
@@ -155,9 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       left: 16,
                       right: 16,
                       child: PlaceSearchBar(
-                        // --- ÚJ: Levonjuk a billentyűzet magasságát a maximális magasságból! ---
-                        maxAvailableHeight:
-                            constraints.maxHeight - 32.0 - bottomInset,
+                        parentConstraintsHeight: constraints.maxHeight,
                         onPlaceSelected: (LatLng location) {
                           _controller.animatedMapMove(location, 14.0);
                         },
@@ -230,8 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
                           child: _controller.errorMessage != null
-                              ? // --- HIBA UI ---
-                                Center(
+                              ? Center(
                                   key: const ValueKey('error_view'),
                                   child: SingleChildScrollView(
                                     child: Padding(
@@ -254,36 +259,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                             _controller.errorMessage ??
                                                 "Ismeretlen hiba történt.",
                                             textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w500,
-                                              height: 1.5,
-                                            ),
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleMedium,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            "Ellenőrizd az internetkapcsolatot és próbáld újra.",
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withOpacity(0.6),
+                                                ),
                                           ),
                                           const SizedBox(height: 32),
-                                          ElevatedButton.icon(
+                                          FilledButton.icon(
                                             onPressed:
                                                 _controller.retryInitialLoad,
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                            ),
+                                            icon: const Icon(Icons.refresh),
                                             label: const Text(
-                                              "Újrapróbálkozás",
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                              'Újrapróbálkozás',
                                             ),
-                                            style: ElevatedButton.styleFrom(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 24,
-                                                    vertical: 14,
-                                                  ),
+                                            style: FilledButton.styleFrom(
                                               backgroundColor: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                              foregroundColor: Theme.of(
                                                 context,
                                               ).colorScheme.onPrimary,
                                               shape: RoundedRectangleBorder(
@@ -297,8 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 )
-                              : // --- TÖLTŐ UI ---
-                                const Center(
+                              : const Center(
                                   key: ValueKey('loading_view'),
                                   child: CircularProgressIndicator(),
                                 ),
@@ -307,44 +309,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ],
-              ); // <--- EZ A PONTOSVESSZŐ HIÁNYZOTT! Itt tér vissza a Stack a LayoutBuilder-ből.
-            }, // <--- EZ A ZÁRÓJEL HIÁNYZOTT! Itt ér véget a LayoutBuilder builder funkciója.
-          ), // <--- EZ A ZÁRÓJEL HIÁNYZOTT! Itt zárul be maga a LayoutBuilder.
-          // Ha hiba van, VAGY nyitva a billentyűzet, a GPS gombot elrejtjük
+              );
+            },
+          ),
+
+          // --- FAB: Izolált widget, saját maga olvassa a billentyűzet állapotát ---
           floatingActionButton:
-              (!isKeyboardOpen &&
-                  _controller.selectedIndex == 0 &&
-                  _controller.errorMessage == null)
-              ? FloatingActionButton(
-                  onPressed: _controller.isLocating
-                      ? null
-                      : () {
-                          _controller.handleLocationPress(() {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Nem sikerült meghatározni a helyzetet.',
-                                  ),
-                                ),
-                              );
-                            }
-                          });
-                        },
-                  tooltip: 'Helymeghatározás',
-                  child: _controller.isLocating
-                      ? const Padding(
-                          padding: EdgeInsets.all(12.0),
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 3,
+              _controller.selectedIndex == 0 && _controller.errorMessage == null
+              ? _KeyboardAwareFab(
+                  isLocating: _controller.isLocating,
+                  onPressed: () {
+                    _controller.handleLocationPress(() {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Nem sikerült meghatározni a helyzetet.',
+                            ),
                           ),
-                        )
-                      : const Icon(Icons.my_location),
+                        );
+                      }
+                    });
+                  },
                 )
               : null,
 
-          // Ha hiba van, az alsó navigációt nem lehet kattintani
           bottomNavigationBar: IgnorePointer(
             ignoring: _controller.errorMessage != null,
             child: NavigationBar(
@@ -369,6 +358,35 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Izolált widget a FAB számára — CSAK ez épül újra a billentyűzet animáció során.
+class _KeyboardAwareFab extends StatelessWidget {
+  final bool isLocating;
+  final VoidCallback onPressed;
+
+  const _KeyboardAwareFab({required this.isLocating, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isKeyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+
+    if (isKeyboardOpen) return const SizedBox.shrink();
+
+    return FloatingActionButton(
+      onPressed: isLocating ? null : onPressed,
+      tooltip: 'Helymeghatározás',
+      child: isLocating
+          ? const Padding(
+              padding: EdgeInsets.all(12.0),
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 3,
+              ),
+            )
+          : const Icon(Icons.my_location),
     );
   }
 }

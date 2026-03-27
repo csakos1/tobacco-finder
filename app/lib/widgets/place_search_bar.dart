@@ -7,12 +7,15 @@ import '../services/geocoding_service.dart';
 
 class PlaceSearchBar extends StatefulWidget {
   final Function(LatLng) onPlaceSelected;
-  final double maxAvailableHeight; // <-- ÚJ: Ezt fogja megkapni a főképernyőtől
+
+  /// A szülő LayoutBuilder constraints.maxHeight értéke.
+  /// Ez NEM változik a billentyűzet megjelenésekor (mert resizeToAvoidBottomInset: false).
+  final double parentConstraintsHeight;
 
   const PlaceSearchBar({
     super.key,
     required this.onPlaceSelected,
-    required this.maxAvailableHeight, // <-- ÚJ
+    required this.parentConstraintsHeight,
   });
 
   @override
@@ -27,6 +30,11 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
   Timer? _debounce;
   bool _isLoading = false;
   List<PlaceSuggestion> _suggestions = [];
+
+  /// Nyomon követjük, hogy a billentyűzet látható volt-e az előző frame-ben.
+  /// Ha igen és most már nem → a felhasználó bezárta (vissza gomb / swipe),
+  /// tehát el kell engedni a focus-t, hogy a kurzor ne villogjon tovább.
+  bool _wasKeyboardVisible = false;
 
   @override
   void dispose() {
@@ -61,6 +69,7 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
   }
 
   void _selectPlace(PlaceSuggestion place) {
+    // Először unfocus, utána setState — így a billentyűzet NEM jön vissza
     _focusNode.unfocus();
     setState(() {
       _suggestions = [];
@@ -71,14 +80,49 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
 
   @override
   Widget build(BuildContext context) {
+    // ---------------------------------------------------------------
+    // A viewInsets-et ITT olvassuk, NEM a HomeScreen-ben!
+    // Így a billentyűzet animáció során CSAK ez a widget épül újra.
+    // ---------------------------------------------------------------
+    final double bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final bool isKeyboardVisible = bottomInset > 0;
+
+    // ---------------------------------------------------------------
+    // AUTO-UNFOCUS: Ha a billentyűzet eltűnt (vissza gomb / swipe)
+    // de a FocusNode még aktív → unfocus, hogy a kurzor ne villogjon.
+    // Post-frame callback-ben csináljuk, mert build közben nem
+    // szabad állapotot változtatni.
+    //
+    // Ez megoldja azt is, hogy a modal bezárása után ne jöjjön vissza
+    // a billentyűzet: mire a modal eltűnik, a focus már nincs a
+    // SearchBar-on.
+    // ---------------------------------------------------------------
+    if (_wasKeyboardVisible && !isKeyboardVisible && _focusNode.hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _focusNode.hasFocus) {
+          _focusNode.unfocus();
+        }
+      });
+    }
+    _wasKeyboardVisible = isKeyboardVisible;
+
+    // A keresősáv pozíciója (top: 16) + biztonsági margin
+    final double maxHeight =
+        widget.parentConstraintsHeight - 32.0 - bottomInset;
+
     return ConstrainedBox(
-      // --- ÚJ: A külső maximum magasságot itt állítjuk be ---
-      constraints: BoxConstraints(maxHeight: widget.maxAvailableHeight),
+      constraints: BoxConstraints(
+        maxHeight: maxHeight.clamp(100.0, double.infinity),
+      ),
       child: Column(
-        mainAxisSize:
-            MainAxisSize.min, // Csak akkora legyen a Column, amekkora muszáj
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _buildSearchInput(),
+          RepaintBoundary(child: _buildSearchInput()),
+          // ---------------------------------------------------------------
+          // JAVÍTÁS: A Flexible KÖZVETLENÜL a Column gyereke!
+          // Az előző verzióban az AnimatedSize törte a flex constraint
+          // propagálást → BOTTOM OVERFLOW (440px / 868px).
+          // ---------------------------------------------------------------
           if (_suggestions.isNotEmpty) _buildSuggestionsList(),
         ],
       ),
@@ -121,11 +165,8 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
 
   Widget _buildSuggestionsList() {
     return Flexible(
-      // --- ÚJ: A Flexible engedi, hogy a lista dinamikusan kitöltse a rendelkezésre álló magasságot ---
       child: Padding(
-        padding: const EdgeInsets.only(
-          top: 8.0,
-        ), // Itt már nem kell alsó margó, a LayoutBuilder megoldja
+        padding: const EdgeInsets.only(top: 8.0),
         child: Card(
           elevation: 6,
           shape: RoundedRectangleBorder(
@@ -133,42 +174,64 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
           ),
           clipBehavior: Clip.antiAlias,
 
-          // --- ÚJ: A NotificationListener elfogja a görgetést, így az AppBar NEM SZÍNEZŐDIK EL! ---
+          // A NotificationListener elfogja a görgetést, így az AppBar nem színeződik el
           child: NotificationListener<ScrollNotification>(
             onNotification: (ScrollNotification notification) => true,
-            child: ShaderMask(
-              shaderCallback: (Rect rect) {
-                return const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black, Colors.black, Colors.transparent],
-                  stops: [0.0, 0.90, 1.0],
-                ).createShader(rect);
-              },
-              blendMode: BlendMode.dstIn,
-              child: Scrollbar(
-                radius: const Radius.circular(8),
-                thickness: 4,
-                child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  shrinkWrap: true,
-                  physics: const BouncingScrollPhysics(),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: _suggestions.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final place = _suggestions[index];
-                    return ListTile(
-                      leading: const Icon(Icons.location_on_outlined),
-                      title: Text(place.name),
-                      subtitle: Text(place.formattedAddress),
-                      onTap: () => _selectPlace(place),
-                    );
-                  },
+            child: Stack(
+              children: [
+                // A tényleges lista — shrinkWrap ELTÁVOLÍTVA!
+                // A Flexible már biztosít bounded constraints-et,
+                // shrinkWrap nélkül a ListView CSAK annyi helyet foglal,
+                // amennyit a Flexible/ConstrainedBox megenged.
+                Scrollbar(
+                  radius: const Radius.circular(8),
+                  thickness: 4,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    physics: const BouncingScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final place = _suggestions[index];
+                      return ListTile(
+                        leading: const Icon(Icons.location_on_outlined),
+                        title: Text(place.name),
+                        subtitle: Text(place.formattedAddress),
+                        onTap: () => _selectPlace(place),
+                      );
+                    },
+                  ),
                 ),
-              ),
+
+                // Fade effekt a lista alján — olcsó DecoratedBox, nem ShaderMask
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 24,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(16),
+                          bottomRight: Radius.circular(16),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Theme.of(context).cardColor.withOpacity(0.0),
+                            Theme.of(context).cardColor,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

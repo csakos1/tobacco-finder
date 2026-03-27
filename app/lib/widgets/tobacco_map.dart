@@ -24,9 +24,11 @@ class TobaccoMap extends StatefulWidget {
   final Function(Shop) onShopSelected;
   final void Function(CameraPosition)? onCameraMove;
   final void Function(GoogleMapController)? onMapCreated;
-
-  // --- ÚJ: Paraméter a billentyűzet magasságának átvételéhez ---
   final double bottomPadding;
+
+  /// ÚJ: Callback a térkép üres területére koppintáskor.
+  /// A HomeScreen ezt használja a billentyűzet bezárásához.
+  final VoidCallback? onMapTapped;
 
   const TobaccoMap({
     super.key,
@@ -36,7 +38,8 @@ class TobaccoMap extends StatefulWidget {
     required this.onShopSelected,
     this.onCameraMove,
     this.onMapCreated,
-    this.bottomPadding = 0.0, // Alapértelmezetten 0
+    this.bottomPadding = 0.0,
+    this.onMapTapped,
   });
 
   @override
@@ -95,7 +98,6 @@ class _TobaccoMapState extends State<TobaccoMap> {
         clusterDynamic as Cluster<ShopClusterItem>;
 
     final bool isCluster = cluster.isMultiple;
-    // Lekérjük a state-ből az utolsó ismert témát
     final bool isDarkMode = _lastIsDarkMode ?? false;
 
     BitmapDescriptor icon;
@@ -143,10 +145,6 @@ class _TobaccoMapState extends State<TobaccoMap> {
       isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
     );
 
-    // --- Színek dinamikus lekérése ---
-
-    // JAVÍTÁS: A Material 3 AppBar alapértelmezetten a 'surface' színt használja,
-    // ami világos módban kaphat egy minimális árnyalatot a seedColor-ból (nem tiszta fehér).
     final topColor =
         theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
 
@@ -163,7 +161,6 @@ class _TobaccoMapState extends State<TobaccoMap> {
           stops: const [0.0, 0.5, 0.5, 1.0],
         ),
       ),
-      // 30px-es lekerekítés marad
       child: ClipRRect(
         borderRadius: BorderRadius.circular(30.0),
         child: GoogleMap(
@@ -174,9 +171,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
           ),
           markers: _markers,
 
-          // --- ÚJ: Dinamikus padding beállítás ---
           padding: EdgeInsets.only(
-            // Hozzáadjuk a billentyűzet magasságát a Google logó térközéhez!
             bottom: 10.0 + widget.bottomPadding,
             left: 12.0,
             top: 16.0,
@@ -201,11 +196,21 @@ class _TobaccoMapState extends State<TobaccoMap> {
             }
           },
           onCameraIdle: _manager.updateMap,
+
+          // ---------------------------------------------------------------
+          // ÚJ: Térkép üres területére koppintás → billentyűzet bezárása.
+          // A GoogleMap onTap callback-je akkor hívódik meg, amikor a
+          // felhasználó a térkép egy üres (nem marker) területére koppint.
+          // ---------------------------------------------------------------
+          onTap: (_) {
+            widget.onMapTapped?.call();
+          },
+
           myLocationEnabled: widget.myPosition != null,
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
-          compassEnabled: false, // <-- ÚJ SOR: Kikapcsoljuk a gyári iránytűt
+          compassEnabled: false,
         ),
       ),
     );
