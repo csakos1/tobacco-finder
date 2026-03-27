@@ -22,7 +22,8 @@ class PlaceSearchBar extends StatefulWidget {
   State<PlaceSearchBar> createState() => _PlaceSearchBarState();
 }
 
-class _PlaceSearchBarState extends State<PlaceSearchBar> {
+class _PlaceSearchBarState extends State<PlaceSearchBar>
+    with SingleTickerProviderStateMixin {
   final GeocodingService _geocodingService = GeocodingService();
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -31,13 +32,48 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
   bool _isLoading = false;
   List<PlaceSuggestion> _suggestions = [];
 
+  /// Az utolsó nem-üres suggestions lista.
+  /// A bezáró animáció alatt még ezt rendereljük, hogy ne ugorjon üresre.
+  List<PlaceSuggestion> _lastNonEmptySuggestions = [];
+
   /// Nyomon követjük, hogy a billentyűzet látható volt-e az előző frame-ben.
-  /// Ha igen és most már nem → a felhasználó bezárta (vissza gomb / swipe),
-  /// tehát el kell engedni a focus-t, hogy a kurzor ne villogjon tovább.
   bool _wasKeyboardVisible = false;
+
+  // ---------------------------------------------------------------
+  // ANIMÁCIÓ: A lista megjelenését/eltűnését smooth-á teszi.
+  // SizeTransition + FadeTransition — NEM töri el a Flexible-t.
+  // ---------------------------------------------------------------
+  late final AnimationController _listAnimController;
+  late final Animation<double> _listSizeFactor;
+  late final Animation<double> _listOpacity;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _listAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+
+    // Smooth easing a méretváltozáshoz
+    _listSizeFactor = CurvedAnimation(
+      parent: _listAnimController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    // Az opacity kicsit gyorsabban ér el 1-re mint a méret → kellemesebb hatás
+    _listOpacity = CurvedAnimation(
+      parent: _listAnimController,
+      curve: const Interval(0.0, 0.75, curve: Curves.easeOut),
+      reverseCurve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+    );
+  }
 
   @override
   void dispose() {
+    _listAnimController.dispose();
     _controller.dispose();
     _focusNode.dispose();
     _debounce?.cancel();
@@ -48,10 +84,8 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
 
     if (query.trim().length < 3) {
-      setState(() {
-        _suggestions = [];
-        _isLoading = false;
-      });
+      _setSuggestions([]);
+      setState(() => _isLoading = false);
       return;
     }
 
@@ -60,19 +94,38 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       final results = await _geocodingService.searchPlaces(query);
       if (mounted) {
-        setState(() {
-          _suggestions = results;
-          _isLoading = false;
-        });
+        _setSuggestions(results);
+        setState(() => _isLoading = false);
       }
     });
+  }
+
+  /// Központi setter: kezeli az animáció indítását is.
+  void _setSuggestions(List<PlaceSuggestion> newSuggestions) {
+    final bool wasEmpty = _suggestions.isEmpty;
+    final bool willBeEmpty = newSuggestions.isEmpty;
+
+    setState(() {
+      _suggestions = newSuggestions;
+      if (newSuggestions.isNotEmpty) {
+        _lastNonEmptySuggestions = newSuggestions;
+      }
+    });
+
+    if (wasEmpty && !willBeEmpty) {
+      // Lista megjelenik → forward animáció
+      _listAnimController.forward();
+    } else if (!wasEmpty && willBeEmpty) {
+      // Lista eltűnik → reverse animáció
+      _listAnimController.reverse();
+    }
   }
 
   void _selectPlace(PlaceSuggestion place) {
     // Először unfocus, utána setState — így a billentyűzet NEM jön vissza
     _focusNode.unfocus();
+    _setSuggestions([]);
     setState(() {
-      _suggestions = [];
       _controller.text = place.name;
     });
     widget.onPlaceSelected(LatLng(place.lat, place.lon));
@@ -92,10 +145,6 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
     // de a FocusNode még aktív → unfocus, hogy a kurzor ne villogjon.
     // Post-frame callback-ben csináljuk, mert build közben nem
     // szabad állapotot változtatni.
-    //
-    // Ez megoldja azt is, hogy a modal bezárása után ne jöjjön vissza
-    // a billentyűzet: mire a modal eltűnik, a focus már nincs a
-    // SearchBar-on.
     // ---------------------------------------------------------------
     if (_wasKeyboardVisible && !isKeyboardVisible && _focusNode.hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -106,7 +155,6 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
     }
     _wasKeyboardVisible = isKeyboardVisible;
 
-    // A keresősáv pozíciója (top: 16) + biztonsági margin
     final double maxHeight =
         widget.parentConstraintsHeight - 32.0 - bottomInset;
 
@@ -119,11 +167,10 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
         children: [
           RepaintBoundary(child: _buildSearchInput()),
           // ---------------------------------------------------------------
-          // JAVÍTÁS: A Flexible KÖZVETLENÜL a Column gyereke!
-          // Az előző verzióban az AnimatedSize törte a flex constraint
-          // propagálást → BOTTOM OVERFLOW (440px / 868px).
+          // A lista MINDIG a widget tree-ben van (nem if-fel vezérelve),
+          // a SizeTransition 0-ra animálja ha üres → nincs layout ugrás.
           // ---------------------------------------------------------------
-          if (_suggestions.isNotEmpty) _buildSuggestionsList(),
+          _buildAnimatedSuggestionsList(),
         ],
       ),
     );
@@ -163,76 +210,97 @@ class _PlaceSearchBarState extends State<PlaceSearchBar> {
     );
   }
 
-  Widget _buildSuggestionsList() {
+  /// Animált wrapper: SizeTransition + FadeTransition.
+  /// A Flexible KÖZVETLENÜL a Column gyereke marad → nem töri el a flex-et.
+  Widget _buildAnimatedSuggestionsList() {
     return Flexible(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 8.0),
-        child: Card(
-          elevation: 6,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          clipBehavior: Clip.antiAlias,
+      child: SizeTransition(
+        sizeFactor: _listSizeFactor,
+        axisAlignment: -1.0, // Felülről lefelé nyílik
+        child: FadeTransition(
+          opacity: _listOpacity,
+          child: _buildSuggestionsListContent(),
+        ),
+      ),
+    );
+  }
 
-          // A NotificationListener elfogja a görgetést, így az AppBar nem színeződik el
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (ScrollNotification notification) => true,
-            child: Stack(
-              children: [
-                // A tényleges lista — shrinkWrap ELTÁVOLÍTVA!
-                // A Flexible már biztosít bounded constraints-et,
-                // shrinkWrap nélkül a ListView CSAK annyi helyet foglal,
-                // amennyit a Flexible/ConstrainedBox megenged.
-                Scrollbar(
-                  radius: const Radius.circular(8),
-                  thickness: 4,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    physics: const BouncingScrollPhysics(),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: _suggestions.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final place = _suggestions[index];
-                      return ListTile(
-                        leading: const Icon(Icons.location_on_outlined),
-                        title: Text(place.name),
-                        subtitle: Text(place.formattedAddress),
-                        onTap: () => _selectPlace(place),
-                      );
-                    },
-                  ),
+  /// A tényleges lista tartalom — kiemelve a tiszta SoC érdekében.
+  Widget _buildSuggestionsListContent() {
+    // A bezáró animáció alatt a _lastNonEmptySuggestions-t rendereljük,
+    // hogy ne villanjon üresre mielőtt összezárul.
+    final displayItems = _suggestions.isNotEmpty
+        ? _suggestions
+        : _lastNonEmptySuggestions;
+
+    // Ha soha nem volt suggestion, ne rendereljünk semmit
+    if (displayItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8.0),
+      child: Card(
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+
+        // A NotificationListener elfogja a görgetést, így az AppBar nem színeződik el
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (ScrollNotification notification) => true,
+          child: Stack(
+            children: [
+              // A tényleges lista — shrinkWrap NÉLKÜL!
+              // A Flexible már biztosít bounded constraints-et.
+              Scrollbar(
+                radius: const Radius.circular(8),
+                thickness: 4,
+                child: ListView.separated(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  physics: const BouncingScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: displayItems.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final place = displayItems[index];
+                    return ListTile(
+                      leading: const Icon(Icons.location_on_outlined),
+                      title: Text(place.name),
+                      subtitle: Text(place.formattedAddress),
+                      onTap: () => _selectPlace(place),
+                    );
+                  },
                 ),
+              ),
 
-                // Fade effekt a lista alján — olcsó DecoratedBox, nem ShaderMask
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 24,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(16),
-                          bottomRight: Radius.circular(16),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Theme.of(context).cardColor.withOpacity(0.0),
-                            Theme.of(context).cardColor,
-                          ],
-                        ),
+              // Fade effekt a lista alján
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 24,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(16),
+                        bottomRight: Radius.circular(16),
+                      ),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Theme.of(context).cardColor.withOpacity(0.0),
+                          Theme.of(context).cardColor,
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
