@@ -84,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           resizeToAvoidBottomInset: false,
           appBar: AppBar(
+            forceMaterialTransparency: _controller.selectedIndex == 0,
             scrolledUnderElevation: _controller.selectedIndex == 0 ? 0.0 : null,
             title: const Text(
               "Dohánybolt Kereső",
