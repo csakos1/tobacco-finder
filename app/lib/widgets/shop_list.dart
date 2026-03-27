@@ -4,6 +4,7 @@ import '../models/shop.dart';
 import '../utils/shop_logic.dart';
 import 'opening_hours_widget.dart';
 import '../controllers/home_controller.dart';
+import '../services/haptic_service.dart';
 
 class ShopList extends StatefulWidget {
   final List<Shop> shops;
@@ -80,6 +81,7 @@ class _ShopListState extends State<ShopList> {
                     ),
                   ),
                   onSelected: (selected) {
+                    HapticService.lightImpact();
                     widget.onFilterChanged(
                       selected ? ShopFilter.openNow : ShopFilter.none,
                     );
@@ -115,6 +117,7 @@ class _ShopListState extends State<ShopList> {
                     ),
                   ),
                   onSelected: (selected) {
+                    HapticService.lightImpact();
                     widget.onFilterChanged(
                       selected ? ShopFilter.nonStop : ShopFilter.none,
                     );

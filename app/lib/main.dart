@@ -1,25 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Új import
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
 
 // Ezzel a globális változóval kezeljük a téma váltást az egész appban
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
+// Haptic feedback be/kikapcsolás — alapértelmezetten bekapcsolva
+final ValueNotifier<bool> hapticNotifier = ValueNotifier(true);
+
 void main() async {
   // Ez kötelező, ha a runApp előtt async hívásokat (pl. SharedPreferences) végzünk
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Elmentett téma betöltése
+  // Elmentett beállítások betöltése
   final prefs = await SharedPreferences.getInstance();
-  // Kikeressük az elmentett indexet (ha még nincs, null lesz)
-  final savedThemeIndex = prefs.getInt('theme_mode');
 
+  // Téma betöltése
+  final savedThemeIndex = prefs.getInt('theme_mode');
   if (savedThemeIndex != null) {
-    // A ThemeMode enum elemeit vissza tudjuk állítani az indexük alapján
-    // 0: system, 1: light, 2: dark
     themeNotifier.value = ThemeMode.values[savedThemeIndex];
   }
+
+  // Haptic feedback beállítás betöltése (alapértelmezetten true)
+  hapticNotifier.value = prefs.getBool('haptic_enabled') ?? true;
 
   runApp(const MyApp());
 }
@@ -44,8 +48,7 @@ class MyApp extends StatelessWidget {
           theme: ThemeData(
             useMaterial3: true,
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-            scaffoldBackgroundColor:
-                Colors.white, // Explicit fehér háttér világos módban
+            scaffoldBackgroundColor: Colors.white,
             textTheme: GoogleFonts.outfitTextTheme()
                 .apply(bodyColor: Colors.black, displayColor: Colors.black)
                 .copyWith(
@@ -59,19 +62,15 @@ class MyApp extends StatelessWidget {
                 ),
           ),
 
-          // --- SÖTÉT TÉMA (Az új kód) ---
+          // --- SÖTÉT TÉMA ---
           darkTheme: ThemeData(
             useMaterial3: true,
-            // Sötét mód esetén a brightness: Brightness.dark fontos!
             colorScheme: ColorScheme.fromSeed(
               seedColor: Colors.blue,
               brightness: Brightness.dark,
-              surface: const Color(0xFF171A1F), // A kért szín: #171a1f
+              surface: const Color(0xFF171A1F),
             ),
-            // A Scaffold (képernyő) háttere is legyen a kért szín
             scaffoldBackgroundColor: const Color(0xFF171A1F),
-
-            // A betűtípus beállítása sötét módra (fehér betűkkel)
             textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme)
                 .copyWith(
                   headlineMedium: GoogleFonts.outfit(

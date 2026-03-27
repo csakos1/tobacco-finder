@@ -9,6 +9,7 @@ import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/place_search_bar.dart';
 import 'dart:math' as math;
+import '../services/haptic_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -340,7 +341,10 @@ class _HomeScreenState extends State<HomeScreen> {
             child: NavigationBar(
               height: 65,
               selectedIndex: _controller.selectedIndex,
-              onDestinationSelected: _controller.setSelectedIndex,
+              onDestinationSelected: (index) {
+                HapticService.lightImpact();
+                _controller.setSelectedIndex(index);
+              },
               labelBehavior:
                   NavigationDestinationLabelBehavior.onlyShowSelected,
               destinations: const <Widget>[

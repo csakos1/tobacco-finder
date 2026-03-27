@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../main.dart'; // A themeNotifier eléréséhez
+import '../main.dart'; // A themeNotifier és hapticNotifier eléréséhez
+import '../services/haptic_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -65,6 +66,20 @@ class SettingsScreen extends StatelessWidget {
                         icon: Icons.palette_outlined,
                         onTap: () => _showThemeDialog(context),
                       ),
+                      _GroupItem(
+                        title: "Rezgés visszajelzés",
+                        //subtitle: "Finom rezgés navigációnál és szűrésnél",
+                        icon: Icons.vibration,
+                        onTap: () => _toggleHaptic(),
+                        // Trailing Switch widget a ki/bekapcsoláshoz
+                        trailingWidget: ValueListenableBuilder<bool>(
+                          valueListenable: hapticNotifier,
+                          builder: (context, isEnabled, _) => Switch(
+                            value: isEnabled,
+                            onChanged: (_) => _toggleHaptic(),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -74,6 +89,20 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Haptic beállítás togglelése és mentése
+  void _toggleHaptic() async {
+    final newValue = !hapticNotifier.value;
+    hapticNotifier.value = newValue;
+
+    // Ha éppen bekapcsoltuk, adjunk egy finom rezgést visszajelzésként
+    if (newValue) {
+      HapticService.lightImpact();
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('haptic_enabled', newValue);
   }
 
   // Material 3 Expressive Dialog
@@ -143,18 +172,16 @@ class SettingsScreen extends StatelessWidget {
       value: mode,
       groupValue: currentMode,
       onChanged: (ThemeMode? value) async {
-        // <- async lett a függvény!
         if (value != null) {
           themeNotifier.value = value;
 
-          // --- ÚJ RÉSZ: Elmentjük a beállítást ---
+          // Elmentjük a beállítást
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('theme_mode', value.index);
-          // ---------------------------------------
 
           // Ha async hívás után navigálunk, ellenőrizni kell, hogy a context még él-e
           if (context.mounted) {
-            Navigator.pop(context); // Bezárjuk kiválasztáskor
+            Navigator.pop(context);
           }
         }
       },
@@ -194,10 +221,10 @@ class SettingsScreen extends StatelessWidget {
 class _GroupItem {
   final String title;
   final String? subtitle;
-  final Widget?
-  subtitleWidget; // Új: Widget is lehet a felirat (a frissítéshez)
+  final Widget? subtitleWidget; // Widget is lehet a felirat (a frissítéshez)
   final IconData icon;
   final VoidCallback onTap;
+  final Widget? trailingWidget; // Opcionális trailing widget (pl. Switch)
 
   _GroupItem({
     required this.title,
@@ -205,6 +232,7 @@ class _GroupItem {
     this.subtitleWidget,
     required this.icon,
     required this.onTap,
+    this.trailingWidget,
   });
 }
 
@@ -271,10 +299,8 @@ class _SettingsGroup extends StatelessWidget {
                   subtitle:
                       item.subtitleWidget ??
                       (item.subtitle != null ? Text(item.subtitle!) : null),
-
-                  // JAVÍTÁS: A trailing (nyíl) eltávolítva!
-                  trailing: null,
-
+                  // Ha van trailing widget (pl. Switch), azt mutatjuk
+                  trailing: item.trailingWidget,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16.0),
                 ),
               ),
