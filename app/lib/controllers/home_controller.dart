@@ -72,7 +72,23 @@ class HomeController extends ChangeNotifier {
       mapCenter = savedPosition;
       currentTarget = savedPosition;
     }
-    _firstLoad();
+
+    // ---------------------------------------------------------------
+    // BIZTONSÁGOS ASYNC INDÍTÁS: A konstruktor nem lehet async,
+    // ezért a _firstLoad() Future-jét explicit kezeljük.
+    // A .catchError() biztosítja, hogy ha bármi váratlan kivétel
+    // kiszökik a _firstLoad() top-level try-catch-éből,
+    // az NE legyen unhandled exception.
+    // ---------------------------------------------------------------
+    _firstLoad().catchError((Object error, StackTrace stack) {
+      debugPrint('Kritikus hiba az első betöltésnél: $error\n$stack');
+      if (!_isDisposed) {
+        errorMessage =
+            'Váratlan hiba történt az induláskor.\nKérlek próbáld újra.';
+        isLoading = false;
+        notifyListeners();
+      }
+    });
   }
 
   @override
@@ -197,91 +213,114 @@ class HomeController extends ChangeNotifier {
     await _firstLoad();
   }
 
+  // ---------------------------------------------------------------
+  // ELSŐ BETÖLTÉS: Cached pozíció → boltok lekérése → háttér GPS.
+  //
+  // Top-level try-catch biztosítja, hogy semmilyen váratlan kivétel
+  // ne szökjön ki kezelés nélkül. Ez kritikus, mert a konstruktor
+  // nem képes await-elni a Future-t, és egy unhandled async exception
+  // a teljes Dart zone-t crashelheti.
+  // ---------------------------------------------------------------
   Future<void> _firstLoad() async {
-    errorMessage = null; // Induláskor nincs hiba
-
-    LatLng? cachedPosition;
     try {
-      cachedPosition = await _locationService.getLastKnownPosition();
-    } catch (_) {}
+      errorMessage = null; // Induláskor nincs hiba
 
-    if (cachedPosition != null && !_isDisposed) {
-      myPosition = cachedPosition;
-      mapCenter = cachedPosition;
-      // Mentjük a pozíciót cold start fallback-nek
-      _locationService.savePosition(cachedPosition);
-      notifyListeners();
-
+      LatLng? cachedPosition;
       try {
-        shops = await _apiService.fetchNearby(
-          cachedPosition.latitude,
-          cachedPosition.longitude,
-        );
-        _lastFetchPosition = cachedPosition;
-      } catch (e) {
-        debugPrint("Nem sikerült betölteni a boltokat: $e");
+        cachedPosition = await _locationService.getLastKnownPosition();
+      } catch (_) {}
+
+      if (cachedPosition != null && !_isDisposed) {
+        myPosition = cachedPosition;
+        mapCenter = cachedPosition;
+        // Mentjük a pozíciót cold start fallback-nek
+        _locationService.savePosition(cachedPosition);
+        notifyListeners();
+
+        try {
+          shops = await _apiService.fetchNearby(
+            cachedPosition.latitude,
+            cachedPosition.longitude,
+          );
+          _lastFetchPosition = cachedPosition;
+        } catch (e) {
+          debugPrint("Nem sikerült betölteni a boltokat: $e");
+          errorMessage =
+              "Nem sikerült a boltokat betölteni.\nEllenőrizd az internetkapcsolatod.";
+        }
+      } else {
         errorMessage =
-            "Nem sikerült a boltokat betölteni.\nEllenőrizd az internetkapcsolatod.";
+            "Nem sikerült meghatározni a helyzetedet.\nEllenőrizd a helymeghatározási engedélyeket.";
       }
-    } else {
-      errorMessage =
-          "Nem sikerült meghatározni a helyzetedet.\nEllenőrizd a helymeghatározási engedélyeket.";
-    }
-
-    if (myPosition != null && errorMessage == null) {
-      _sortShopsByDistance();
-    }
-
-    if (!_isDisposed) {
-      isLoading = false;
-      notifyListeners();
-
-      // Ellenőrizzük, hogy a térkép kész-e a megjelenítésre
-      _tryRevealMap();
 
       if (myPosition != null && errorMessage == null) {
-        animatedMapMove(myPosition!, 15.0);
+        _sortShopsByDistance();
       }
-    }
 
-    // Csak akkor kérünk friss GPS-t a háttérben, ha nem volt hiba
-    if (myPosition != null && errorMessage == null) {
-      _locationService
-          .determinePosition()
-          .then((LatLng? freshPosition) async {
-            if (freshPosition != null && !_isDisposed) {
-              final double distMoved = Geolocator.distanceBetween(
-                myPosition!.latitude,
-                myPosition!.longitude,
-                freshPosition.latitude,
-                freshPosition.longitude,
-              );
+      if (!_isDisposed) {
+        isLoading = false;
+        notifyListeners();
 
-              if (distMoved > 500) {
-                try {
-                  shops = await _apiService.fetchNearby(
-                    freshPosition.latitude,
-                    freshPosition.longitude,
-                  );
+        // Ellenőrizzük, hogy a térkép kész-e a megjelenítésre
+        _tryRevealMap();
+
+        if (myPosition != null && errorMessage == null) {
+          animatedMapMove(myPosition!, 15.0);
+        }
+      }
+
+      // Csak akkor kérünk friss GPS-t a háttérben, ha nem volt hiba
+      if (myPosition != null && errorMessage == null) {
+        _locationService
+            .determinePosition()
+            .then((LatLng? freshPosition) async {
+              if (freshPosition != null && !_isDisposed) {
+                final double distMoved = Geolocator.distanceBetween(
+                  myPosition!.latitude,
+                  myPosition!.longitude,
+                  freshPosition.latitude,
+                  freshPosition.longitude,
+                );
+
+                if (distMoved > 500) {
+                  try {
+                    shops = await _apiService.fetchNearby(
+                      freshPosition.latitude,
+                      freshPosition.longitude,
+                    );
+                    myPosition = freshPosition;
+                    _locationService.savePosition(freshPosition);
+                    _sortShopsByDistance();
+                    notifyListeners();
+                    if (selectedIndex == 0) {
+                      animatedMapMove(freshPosition, 15.0);
+                    }
+                  } catch (_) {}
+                } else {
                   myPosition = freshPosition;
                   _locationService.savePosition(freshPosition);
                   _sortShopsByDistance();
                   notifyListeners();
-                  if (selectedIndex == 0) {
-                    animatedMapMove(freshPosition, 15.0);
-                  }
-                } catch (_) {}
-              } else {
-                myPosition = freshPosition;
-                _locationService.savePosition(freshPosition);
-                _sortShopsByDistance();
-                notifyListeners();
+                }
               }
-            }
-          })
-          .catchError((e) {
-            debugPrint("Pontosítás sikertelen: $e");
-          });
+            })
+            .catchError((e) {
+              debugPrint("Pontosítás sikertelen: $e");
+            });
+      }
+    } catch (e, stack) {
+      // ---------------------------------------------------------------
+      // VÉGSŐ VÉDELEM: Ha bármi előre nem látott kivétel keletkezik,
+      // itt elkapjuk, logoljuk, és hibaüzenetet mutatunk a usernek.
+      // Enélkül az async exception kezelés nélkül maradna.
+      // ---------------------------------------------------------------
+      debugPrint('Váratlan hiba a _firstLoad-ban: $e\n$stack');
+      if (!_isDisposed) {
+        errorMessage =
+            'Váratlan hiba történt az induláskor.\nKérlek próbáld újra.';
+        isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
