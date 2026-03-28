@@ -19,6 +19,14 @@ class HomeController extends ChangeNotifier {
   GoogleMapController? mapController;
   Timer? _debounce;
 
+  // ---------------------------------------------------------------
+  // MEMÓRIA LIMIT: A boltlista maximális mérete.
+  // Ha a user sokat pásztáz és a lista túllépi ezt a számot,
+  // a térkép középpontjától legtávolabbi boltokat eldobjuk.
+  // Ez megvéd a végtelen listanövekedéstől és a klaszterező lassulásától.
+  // ---------------------------------------------------------------
+  static const int _maxShopCount = 500;
+
   // Állapotváltozók (State)
   List<Shop> shops = [];
   bool isLoading = true;
@@ -136,6 +144,47 @@ class HomeController extends ChangeNotifier {
       );
       return distA.compareTo(distB);
     });
+  }
+
+  // ---------------------------------------------------------------
+  // MEMÓRIA KARBANTARTÁS: Túl távoli boltok eldobása.
+  //
+  // Ha a boltlista meghaladja a [_maxShopCount] limitet,
+  // a [referencePoint]-tól (térkép középpont) legtávolabbi
+  // boltokat vágjuk le. Így a user közvetlen környéke mindig
+  // megmarad, de a 30+ km-re lévő régi boltok felszabadulnak.
+  // ---------------------------------------------------------------
+  void _pruneDistantShops(LatLng referencePoint) {
+    if (shops.length <= _maxShopCount) return;
+
+    // Távolság szerinti rendezés a referencia ponttól (legközelebbi elöl)
+    shops.sort((a, b) {
+      final double distA = (a.lat != null && a.long != null)
+          ? Geolocator.distanceBetween(
+              referencePoint.latitude,
+              referencePoint.longitude,
+              a.lat!,
+              a.long!,
+            )
+          : double.infinity;
+      final double distB = (b.lat != null && b.long != null)
+          ? Geolocator.distanceBetween(
+              referencePoint.latitude,
+              referencePoint.longitude,
+              b.lat!,
+              b.long!,
+            )
+          : double.infinity;
+      return distA.compareTo(distB);
+    });
+
+    // A legközelebbi _maxShopCount bolt megtartása, a többi eldobása
+    shops = shops.sublist(0, _maxShopCount);
+
+    debugPrint(
+      "Boltlista vágva: ${shops.length} bolt megtartva "
+      "(limit: $_maxShopCount)",
+    );
   }
 
   // --- Újrapróbálkozás metódus a UI gombjának ---
@@ -317,6 +366,14 @@ class HomeController extends ChangeNotifier {
     }
   }
 
+  // ---------------------------------------------------------------
+  // TÉRKÉP PÁSZTÁZÁS: Új boltok lekérése + memória-korlát betartása.
+  //
+  // Ha a user 2+ km-t mozdult az utolsó fetch óta, új nearby query
+  // megy a backend felé. Az eredményt a meglévő listába merge-öljük
+  // (deduplikálva), majd ha a lista túlnőtte a limitet,
+  // a _pruneDistantShops levágja a legtávolabbi boltokat.
+  // ---------------------------------------------------------------
   Future<void> _fetchMapArea(LatLng newCenter) async {
     if (_lastFetchPosition != null) {
       final double distMovedMeters = Geolocator.distanceBetween(
@@ -343,6 +400,10 @@ class HomeController extends ChangeNotifier {
 
       if (uniqueNewShops.isNotEmpty) {
         shops = [...shops, ...uniqueNewShops];
+
+        // Memória-limit betartása: túl távoli boltok eldobása
+        _pruneDistantShops(newCenter);
+
         _sortShopsByDistance();
       }
       _lastFetchPosition = newCenter;
