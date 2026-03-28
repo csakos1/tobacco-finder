@@ -6,6 +6,13 @@ import '../models/place_suggestion.dart';
 class GeocodingService {
   final Dio _dio = Dio();
 
+  /// Magyarország bounding box-a a Photon API szűréséhez.
+  /// Formátum: minLon,minLat,maxLon,maxLat
+  /// Ez biztosítja, hogy csak magyar találatokat kapjunk ANÉLKÜL,
+  /// hogy szöveges suffixet fűznénk a query-hez — ami házszámos
+  /// kereséseknél megtöri a cím-elemzőt.
+  static const String _hungaryBbox = '16.1,45.7,22.9,48.6';
+
   Future<List<PlaceSuggestion>> searchPlaces(String query) async {
     if (query.trim().length < 3) return [];
 
@@ -13,8 +20,9 @@ class GeocodingService {
       final response = await _dio.get(
         'https://photon.komoot.io/api/',
         queryParameters: {
-          'q': '$query, Magyarország',
+          'q': query,
           'limit': 15,
+          'bbox': _hungaryBbox,
           // A lang paramétert szándékosan kivettük, mert a Photon API
           // nyilvános szervere nem támogatja a 'hu' kódot és 400-as hibát dob!
         },

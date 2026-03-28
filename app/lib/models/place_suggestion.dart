@@ -6,6 +6,7 @@ class PlaceSuggestion {
   final String name;
   final String? city;
   final String? street;
+  final String? houseNumber;
   final double lat;
   final double lon;
 
@@ -21,6 +22,7 @@ class PlaceSuggestion {
     required this.name,
     this.city,
     this.street,
+    this.houseNumber,
     required this.lat,
     required this.lon,
     this.type,
@@ -41,13 +43,29 @@ class PlaceSuggestion {
       }
     }
 
+    final String? houseNumber = props['housenumber'] as String?;
+    final String? street = props['street'] as String?;
+    final String rawName = props['name'] as String? ?? '';
+    final String parsedType = props['type'] as String? ?? '';
+
+    // Házszámos találatoknál a Photon sokszor üres name-et ad vissza,
+    // vagy a name csak a házszám. Ilyenkor az utcanévből + házszámból
+    // építjük fel az olvasható nevet.
+    String displayName = rawName;
+    if (parsedType == 'house' && street != null) {
+      displayName = houseNumber != null ? '$street $houseNumber' : street;
+    } else if (displayName.isEmpty && street != null) {
+      displayName = street;
+    }
+
     return PlaceSuggestion(
-      name: props['name'] ?? '',
+      name: displayName,
       city: props['city'] ?? props['town'] ?? props['village'],
-      street: props['street'],
+      street: street,
+      houseNumber: houseNumber,
       lat: coords[1].toDouble(),
       lon: coords[0].toDouble(),
-      type: props['type'] as String?,
+      type: parsedType.isNotEmpty ? parsedType : null,
       extent: parsedExtent,
     );
   }
@@ -88,7 +106,14 @@ class PlaceSuggestion {
   String get formattedAddress {
     List<String> parts = [];
     if (city != null && city != name) parts.add(city!);
-    if (street != null && street != name) parts.add(street!);
+
+    // Utcanév kiírása — de csak ha nem egyezik a name-mel.
+    // Házszámos találatoknál a name már tartalmazza az utca + házszámot,
+    // ezért az utcát felesleges megismételni ha a name eleve a street-ből épül.
+    if (street != null && street != name && !name.startsWith(street!)) {
+      parts.add(street!);
+    }
+
     if (parts.isEmpty) return 'Magyarország';
     return parts.join(', ');
   }

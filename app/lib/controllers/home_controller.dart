@@ -340,35 +340,82 @@ class HomeController extends ChangeNotifier {
   // ---------------------------------------------------------------
 
   /// Keresési eredmény beállítása: pin lerakása + kamera mozgatása.
-  /// Az extent alapján dönt a zoom szintről:
-  ///   - pontos cím (nincs extent) → zoom 17
-  ///   - utca/város (van extent) → bounding box-ra illesztés
+  ///
+  /// Zoom stratégia típusonként:
+  ///   - Pontos cím (house): zoom 17 — nincs extent, közeli nézet
+  ///   - Utca: bounds + bőséges padding (150px) — a teljes utca látszódjon
+  ///   - Város/település: fix zoom szint (13–14) a pont közepére
+  ///     (A Photon adminisztratív extent-je városoknál gyakran túl nagy,
+  ///     pl. Siófok extent-je kiterjed a fél Balatonra)
   Future<void> setSearchPin(PlaceSuggestion place) async {
     if (_isDisposed || mapController == null) return;
 
     searchPinPosition = LatLng(place.lat, place.lon);
     notifyListeners();
 
-    final LatLngBounds? bounds = place.bounds;
-
-    if (bounds != null) {
-      // Van bounding box → ráközelítünk az extent-re
-      // A padding biztosítja, hogy ne legyenek szélén a határok
-      try {
-        await mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(bounds, 60.0),
-        );
-      } catch (e) {
-        debugPrint("Bounds animáció hiba: $e");
-        // Fallback: egyszerű közelítés
-        await animatedMapMove(searchPinPosition!, 14.0);
-      }
-    } else if (place.isExactAddress) {
-      // Pontos cím, nincs extent → nagyon közel zoomolunk
+    if (place.isExactAddress) {
+      // Pontos cím → szoros közelítés
       await animatedMapMove(searchPinPosition!, 17.0);
+    } else if (place.isStreet) {
+      // Utca → bounds-ot használjuk ha van, nagy paddinggel
+      final LatLngBounds? bounds = place.bounds;
+      if (bounds != null) {
+        await _animateToBounds(bounds, padding: 150.0, fallbackZoom: 16.0);
+      } else {
+        await animatedMapMove(searchPinPosition!, 16.0);
+      }
+    } else if (place.isSettlement) {
+      // Város/település → fix zoom szint, NEM az extent alapján.
+      // A Photon admin extent-je megbízhatatlan: kisebb városoknál (pl. Siófok)
+      // az adminisztratív határ sokkal nagyobb mint a tényleges beépített terület.
+      final double zoom = _settlementZoom(place.type);
+      await animatedMapMove(searchPinPosition!, zoom);
     } else {
-      // Egyéb (pl. POI, locality) → közepes zoom
-      await animatedMapMove(searchPinPosition!, 15.0);
+      // Egyéb típus (pl. locality, region, POI)
+      final LatLngBounds? bounds = place.bounds;
+      if (bounds != null) {
+        await _animateToBounds(bounds, padding: 100.0, fallbackZoom: 14.0);
+      } else {
+        await animatedMapMove(searchPinPosition!, 15.0);
+      }
+    }
+  }
+
+  /// Bounds-ra illesztés fallback-kel.
+  Future<void> _animateToBounds(
+    LatLngBounds bounds, {
+    required double padding,
+    required double fallbackZoom,
+  }) async {
+    if (_isDisposed || mapController == null) return;
+    try {
+      await mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, padding),
+      );
+    } catch (e) {
+      debugPrint("Bounds animáció hiba: $e");
+      final center = LatLng(
+        (bounds.northeast.latitude + bounds.southwest.latitude) / 2,
+        (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
+      );
+      await animatedMapMove(center, fallbackZoom);
+    }
+  }
+
+  /// Település típusához illő zoom szint.
+  double _settlementZoom(String? type) {
+    switch (type) {
+      case 'city':
+        return 13.0;
+      case 'town':
+        return 13.5;
+      case 'village':
+        return 14.5;
+      case 'district':
+      case 'borough':
+        return 14.0;
+      default:
+        return 13.0;
     }
   }
 
