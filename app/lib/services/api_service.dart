@@ -24,7 +24,7 @@ class ApiService {
         throw Exception('Hiba a betöltéskor');
       }
     } catch (e) {
-      print("API Hiba (fetchShops): $e");
+      debugPrint("API Hiba (fetchShops): $e");
       return [];
     }
   }
@@ -49,7 +49,7 @@ class ApiService {
         throw Exception('Hiba a betöltéskor');
       }
     } catch (e) {
-      print("API Hiba (fetchNearby): $e");
+      debugPrint("API Hiba (fetchNearby): $e");
       throw Exception('Nem sikerült csatlakozni a szerverhez.');
     }
   }
