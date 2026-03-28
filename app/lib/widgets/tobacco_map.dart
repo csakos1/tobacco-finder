@@ -26,9 +26,16 @@ class TobaccoMap extends StatefulWidget {
   final void Function(GoogleMapController)? onMapCreated;
   final double bottomPadding;
 
-  /// ÚJ: Callback a térkép üres területére koppintáskor.
+  /// Callback a térkép üres területére koppintáskor.
   /// A HomeScreen ezt használja a billentyűzet bezárásához.
   final VoidCallback? onMapTapped;
+
+  /// Keresési pin pozíciója. Ha nem null, egy piros pin jelenik meg ezen a ponton.
+  final LatLng? searchPinPosition;
+
+  /// Callback ami akkor hívódik, amikor a keresési pin-t el kell tüntetni.
+  /// Akkor aktiválódik, ha a felhasználó egy boltos/klaszter pinre koppint.
+  final VoidCallback? onSearchDismissed;
 
   const TobaccoMap({
     super.key,
@@ -40,6 +47,8 @@ class TobaccoMap extends StatefulWidget {
     this.onMapCreated,
     this.bottomPadding = 0.0,
     this.onMapTapped,
+    this.searchPinPosition,
+    this.onSearchDismissed,
   });
 
   @override
@@ -49,7 +58,12 @@ class TobaccoMap extends StatefulWidget {
 class _TobaccoMapState extends State<TobaccoMap> {
   late ClusterManager<ShopClusterItem> _manager;
   GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
+
+  /// A klaszterező által generált markerek (boltok + klaszterek).
+  Set<Marker> _clusterMarkers = {};
+
+  /// A keresési pin markere (ha aktív). Cachelve van, hogy ne generáljuk újra minden frame-ben.
+  Marker? _searchPinMarker;
 
   // Eltároljuk az aktuális témát, hogy tudjuk, mikor kell újrarajzolni a markereket
   bool? _lastIsDarkMode;
@@ -66,13 +80,18 @@ class _TobaccoMapState extends State<TobaccoMap> {
     if (widget.shops != oldWidget.shops) {
       _manager.setItems(_getClusterItems());
     }
+
+    // Keresési pin változott → marker újragenerálás
+    if (widget.searchPinPosition != oldWidget.searchPinPosition) {
+      _rebuildSearchPinMarker();
+    }
   }
 
   // --- Klaszterező inicializálása ---
   ClusterManager<ShopClusterItem> _initClusterManager() {
     return ClusterManager<ShopClusterItem>(
       _getClusterItems(),
-      _updateMarkers,
+      _updateClusterMarkers,
       markerBuilder: _markerBuilder,
       levels: const [1, 4.25, 6.75, 10, 12.0, 13.0, 14.0, 15.0, 16],
       extraPercent: 0.2,
@@ -86,9 +105,44 @@ class _TobaccoMapState extends State<TobaccoMap> {
         .toList();
   }
 
-  void _updateMarkers(Set<Marker> markers) {
+  void _updateClusterMarkers(Set<Marker> markers) {
     setState(() {
-      _markers = markers;
+      _clusterMarkers = markers;
+    });
+  }
+
+  /// Az összes marker: klaszter markerek + keresési pin (ha aktív).
+  Set<Marker> get _allMarkers {
+    if (_searchPinMarker != null) {
+      return {..._clusterMarkers, _searchPinMarker!};
+    }
+    return _clusterMarkers;
+  }
+
+  // ---------------------------------------------------------------
+  // KERESÉSI PIN: Aszinkron generálás és cache-elés
+  // ---------------------------------------------------------------
+  Future<void> _rebuildSearchPinMarker() async {
+    if (widget.searchPinPosition == null) {
+      if (_searchPinMarker != null) {
+        setState(() {
+          _searchPinMarker = null;
+        });
+      }
+      return;
+    }
+
+    final BitmapDescriptor icon = await MarkerGenerator.createSearchPinMarker();
+
+    if (!mounted) return;
+
+    setState(() {
+      _searchPinMarker = Marker(
+        markerId: const MarkerId('search_pin'),
+        position: widget.searchPinPosition!,
+        icon: icon,
+        zIndex: 2.0, // A keresési pin mindig a többi marker felett legyen
+      );
     });
   }
 
@@ -121,7 +175,11 @@ class _TobaccoMapState extends State<TobaccoMap> {
           _mapController?.animateCamera(
             CameraUpdate.newLatLngZoom(cluster.location, 16.5),
           );
+          // Klaszter koppintáskor is megszüntetjük a keresést
+          widget.onSearchDismissed?.call();
         } else {
+          // Boltra koppintás → keresés megszüntetése + bolt részletek
+          widget.onSearchDismissed?.call();
           widget.onShopSelected(cluster.items.first.shop);
         }
       },
@@ -169,7 +227,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
             target: widget.mapCenter,
             zoom: 15.0,
           ),
-          markers: _markers,
+          markers: _allMarkers,
 
           padding: EdgeInsets.only(
             bottom: 10.0 + widget.bottomPadding,
@@ -197,11 +255,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
           },
           onCameraIdle: _manager.updateMap,
 
-          // ---------------------------------------------------------------
-          // ÚJ: Térkép üres területére koppintás → billentyűzet bezárása.
-          // A GoogleMap onTap callback-je akkor hívódik meg, amikor a
-          // felhasználó a térkép egy üres (nem marker) területére koppint.
-          // ---------------------------------------------------------------
+          // Térkép üres területére koppintás → billentyűzet bezárása
           onTap: (_) {
             widget.onMapTapped?.call();
           },

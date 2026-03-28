@@ -21,6 +21,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final HomeController _controller;
 
+  /// GlobalKey a PlaceSearchBar elérésére (keresés kívülről történő törléséhez).
+  final _searchBarKey = GlobalKey<PlaceSearchBarState>();
+
   @override
   void initState() {
     super.initState();
@@ -38,9 +41,16 @@ class _HomeScreenState extends State<HomeScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
+  /// Keresés teljes megszüntetése: pin eltávolítás + keresősáv törlés.
+  /// Hívódik amikor a felhasználó egy boltos/klaszter pinre koppint.
+  void _dismissSearch() {
+    _controller.clearSearchPin();
+    _searchBarKey.currentState?.clearSearch();
+  }
+
   void _showShopDetails(Shop shop) {
     // ---------------------------------------------------------------
-    // JAVÍTÁS: Mielőtt megnyitjuk a modalt, elengedjük a focus-t.
+    // Mielőtt megnyitjuk a modalt, elengedjük a focus-t.
     // Így a modal bezárásakor a SearchBar NEM kapja vissza a focus-t
     // és a billentyűzet NEM jön fel magától.
     // ---------------------------------------------------------------
@@ -126,8 +136,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         onCameraMove: _controller.onMapPositionChanged,
                         onMapCreated: _controller.setMapController,
                         bottomPadding: 0.0,
-                        // ÚJ: Térképre koppintás → billentyűzet bezárása
+                        // Térképre koppintás → billentyűzet bezárása
                         onMapTapped: _dismissKeyboard,
+                        // Keresési pin pozíciója
+                        searchPinPosition: _controller.searchPinPosition,
+                        // Boltos/klaszter pinre koppintás → keresés megszüntetése
+                        onSearchDismissed: _dismissSearch,
                       ),
                       ShopList(
                         shops: _controller.filteredShops,
@@ -165,157 +179,25 @@ class _HomeScreenState extends State<HomeScreen> {
                       left: 16,
                       right: 16,
                       child: PlaceSearchBar(
+                        key: _searchBarKey,
                         parentConstraintsHeight: constraints.maxHeight,
-                        onPlaceSelected: (LatLng location) {
-                          _controller.animatedMapMove(location, 14.0);
+                        onPlaceSelected: (place) {
+                          _controller.setSearchPin(place);
+                        },
+                        onSearchCleared: () {
+                          _controller.clearSearchPin();
                         },
                       ),
                     ),
 
-                  // 2. RÉTEG: Keresés indikátor a térképen
-                  if (_controller.isFetchingArea &&
-                      _controller.selectedIndex == 0)
-                    Positioned(
-                      top: 16,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Text(
-                                "Új boltok keresése...",
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // 3. RÉTEG: Közös Töltő és Hiba Képernyő ("A Függöny")
-                  AnimatedOpacity(
-                    opacity:
-                        (_controller.isLoading ||
-                            !_controller.isMapReady ||
-                            _controller.errorMessage != null)
-                        ? 1.0
-                        : 0.0,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeInOut,
-                    child: IgnorePointer(
-                      ignoring:
-                          !(_controller.isLoading ||
-                              !_controller.isMapReady ||
-                              _controller.errorMessage != null),
-                      child: Container(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        width: double.infinity,
-                        height: double.infinity,
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: _controller.errorMessage != null
-                              ? Center(
-                                  key: const ValueKey('error_view'),
-                                  child: SingleChildScrollView(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(32.0),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.wifi_off_rounded,
-                                            size: 80,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .error
-                                                .withOpacity(0.8),
-                                          ),
-                                          const SizedBox(height: 24),
-                                          Text(
-                                            _controller.errorMessage ??
-                                                "Ismeretlen hiba történt.",
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleMedium,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            "Ellenőrizd az internetkapcsolatot és próbáld újra.",
-                                            textAlign: TextAlign.center,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurface
-                                                      .withOpacity(0.6),
-                                                ),
-                                          ),
-                                          const SizedBox(height: 32),
-                                          FilledButton.icon(
-                                            onPressed:
-                                                _controller.retryInitialLoad,
-                                            icon: const Icon(Icons.refresh),
-                                            label: const Text(
-                                              'Újrapróbálkozás',
-                                            ),
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: Theme.of(
-                                                context,
-                                              ).colorScheme.onPrimary,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : const Center(
-                                  key: ValueKey('loading_view'),
-                                  child: CircularProgressIndicator(),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  // 2. RÉTEG: Hibaállapot
+                  if (_controller.errorMessage != null)
+                    _buildErrorOverlay(context),
                 ],
               );
             },
           ),
 
-          // --- FAB: Izolált widget, saját maga olvassa a billentyűzet állapotát ---
           floatingActionButton:
               _controller.selectedIndex == 0 && _controller.errorMessage == null
               ? _KeyboardAwareFab(
@@ -363,6 +245,58 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Hibaállapot overlay — a térkép/lista fölé rajzolódik.
+  Widget _buildErrorOverlay(BuildContext context) {
+    final theme = Theme.of(context);
+    return Positioned.fill(
+      child: Container(
+        color: theme.colorScheme.surface.withOpacity(0.9),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  size: 64,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _controller.errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _controller.isLoading
+                      ? null
+                      : _controller.retryInitialLoad,
+                  icon: _controller.isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(
+                    _controller.isLoading ? 'Betöltés...' : 'Újrapróbálkozás',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

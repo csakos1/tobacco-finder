@@ -1,12 +1,16 @@
 // app/lib/widgets/place_search_bar.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/place_suggestion.dart';
 import '../services/geocoding_service.dart';
 
 class PlaceSearchBar extends StatefulWidget {
-  final Function(LatLng) onPlaceSelected;
+  /// Hely kiválasztásakor a teljes PlaceSuggestion-t visszaadjuk,
+  /// hogy a hívó fél (HomeScreen) eldönthesse a zoom szintet az extent alapján.
+  final Function(PlaceSuggestion) onPlaceSelected;
+
+  /// Callback a keresés törlésekor (X gomb vagy üres keresőmező).
+  final VoidCallback? onSearchCleared;
 
   /// A szülő LayoutBuilder constraints.maxHeight értéke.
   /// Ez NEM változik a billentyűzet megjelenésekor (mert resizeToAvoidBottomInset: false).
@@ -15,14 +19,17 @@ class PlaceSearchBar extends StatefulWidget {
   const PlaceSearchBar({
     super.key,
     required this.onPlaceSelected,
+    this.onSearchCleared,
     required this.parentConstraintsHeight,
   });
 
   @override
-  State<PlaceSearchBar> createState() => _PlaceSearchBarState();
+  State<PlaceSearchBar> createState() => PlaceSearchBarState();
 }
 
-class _PlaceSearchBarState extends State<PlaceSearchBar>
+/// Publikus State osztály, hogy a HomeScreen GlobalKey-n keresztül
+/// meghívhassa a [clearSearch] metódust (pl. boltos pin koppintáskor).
+class PlaceSearchBarState extends State<PlaceSearchBar>
     with SingleTickerProviderStateMixin {
   final GeocodingService _geocodingService = GeocodingService();
   final TextEditingController _controller = TextEditingController();
@@ -128,7 +135,19 @@ class _PlaceSearchBarState extends State<PlaceSearchBar>
     setState(() {
       _controller.text = place.name;
     });
-    widget.onPlaceSelected(LatLng(place.lat, place.lon));
+    widget.onPlaceSelected(place);
+  }
+
+  /// Publikus metódus: keresés teljes törlése kívülről (pl. boltos pin koppintás).
+  /// A HomeScreen GlobalKey-n keresztül hívja meg.
+  void clearSearch() {
+    _debounce?.cancel();
+    _focusNode.unfocus();
+    _setSuggestions([]);
+    setState(() {
+      _controller.clear();
+      _isLoading = false;
+    });
   }
 
   @override
@@ -204,6 +223,8 @@ class _PlaceSearchBarState extends State<PlaceSearchBar>
               _controller.clear();
               _onSearchChanged('');
               _focusNode.unfocus();
+              // Értesítjük a szülőt, hogy a keresés törölve lett → pin eltűnik
+              widget.onSearchCleared?.call();
             },
           ),
       ],
@@ -213,94 +234,77 @@ class _PlaceSearchBarState extends State<PlaceSearchBar>
   /// Animált wrapper: SizeTransition + FadeTransition.
   /// A Flexible KÖZVETLENÜL a Column gyereke marad → nem töri el a flex-et.
   Widget _buildAnimatedSuggestionsList() {
-    return Flexible(
-      child: SizeTransition(
-        sizeFactor: _listSizeFactor,
-        axisAlignment: -1.0, // Felülről lefelé nyílik
-        child: FadeTransition(
-          opacity: _listOpacity,
-          child: _buildSuggestionsListContent(),
-        ),
-      ),
-    );
-  }
-
-  /// A tényleges lista tartalom — kiemelve a tiszta SoC érdekében.
-  Widget _buildSuggestionsListContent() {
-    // A bezáró animáció alatt a _lastNonEmptySuggestions-t rendereljük,
-    // hogy ne villanjon üresre mielőtt összezárul.
+    // Ha a lista üres ÉS az animáció NEM játszik épp → a cache-elt listát mutatjuk
     final displayItems = _suggestions.isNotEmpty
         ? _suggestions
         : _lastNonEmptySuggestions;
 
-    // Ha soha nem volt suggestion, ne rendereljünk semmit
-    if (displayItems.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: Card(
-        elevation: 6,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        clipBehavior: Clip.antiAlias,
-
-        // A NotificationListener elfogja a görgetést, így az AppBar nem színeződik el
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (ScrollNotification notification) => true,
-          child: Stack(
-            children: [
-              // A tényleges lista — shrinkWrap NÉLKÜL!
-              // A Flexible már biztosít bounded constraints-et.
-              Scrollbar(
-                radius: const Radius.circular(8),
-                thickness: 4,
-                child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  physics: const BouncingScrollPhysics(),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: displayItems.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final place = displayItems[index];
-                    return ListTile(
-                      leading: const Icon(Icons.location_on_outlined),
-                      title: Text(place.name),
-                      subtitle: Text(place.formattedAddress),
-                      onTap: () => _selectPlace(place),
-                    );
-                  },
+    return Flexible(
+      child: SizeTransition(
+        sizeFactor: _listSizeFactor,
+        axisAlignment: -1.0, // Felülről nyílik lefelé
+        child: FadeTransition(
+          opacity: _listOpacity,
+          child: Card(
+            margin: const EdgeInsets.only(top: 8.0),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 4.0,
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                // A Flexible már biztosít bounded constraints-et.
+                Scrollbar(
+                  radius: const Radius.circular(8),
+                  thickness: 4,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    physics: const BouncingScrollPhysics(),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: displayItems.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final place = displayItems[index];
+                      return ListTile(
+                        leading: const Icon(Icons.location_on_outlined),
+                        title: Text(place.name),
+                        subtitle: Text(place.formattedAddress),
+                        onTap: () => _selectPlace(place),
+                      );
+                    },
+                  ),
                 ),
-              ),
 
-              // Fade effekt a lista alján
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 24,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(16),
-                        bottomRight: Radius.circular(16),
-                      ),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Theme.of(context).cardColor.withOpacity(0.0),
-                          Theme.of(context).cardColor,
-                        ],
+                // Fade effekt a lista alján
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 24,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(16),
+                          bottomRight: Radius.circular(16),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Theme.of(context).cardColor.withOpacity(0.0),
+                            Theme.of(context).cardColor,
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

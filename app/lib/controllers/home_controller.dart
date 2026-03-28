@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/shop.dart';
+import '../models/place_suggestion.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/shop_logic.dart';
@@ -21,13 +22,13 @@ class HomeController extends ChangeNotifier {
   List<Shop> shops = [];
   bool isLoading = true;
 
-  // --- ÚJ: Hibaüzenet állapota ---
+  // --- Hibaüzenet állapota ---
   String? errorMessage;
 
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
 
-  // --- ÚJ: Iránytű és kamera állapotok ---
+  // --- Iránytű és kamera állapotok ---
   double mapBearing = 0.0;
   double currentZoom = 15.0;
   LatLng currentTarget = const LatLng(47.50712, 19.04557);
@@ -42,6 +43,12 @@ class HomeController extends ChangeNotifier {
 
   LatLng? _lastFetchPosition;
   ShopFilter currentFilter = ShopFilter.none;
+
+  // ---------------------------------------------------------------
+  // KERESÉSI PIN: A keresett hely piros jelölője a térképen.
+  // Amíg aktív, a térképen egy külön piros pin mutatja a keresett helyet.
+  // ---------------------------------------------------------------
+  LatLng? searchPinPosition;
 
   bool _isDisposed = false;
 
@@ -108,10 +115,9 @@ class HomeController extends ChangeNotifier {
     });
   }
 
-  // --- ÚJ: Újrapróbálkozás metódus a UI gombjának ---
+  // --- Újrapróbálkozás metódus a UI gombjának ---
   Future<void> retryInitialLoad() async {
-    if (isLoading)
-      return; // <-- EZT A SORT ADD HOZZÁ: Ha már tölt, ne csináljon semmit!
+    if (isLoading) return; // Ha már tölt, ne csináljon semmit!
 
     errorMessage = null;
     isLoading = true;
@@ -122,43 +128,30 @@ class HomeController extends ChangeNotifier {
   Future<void> _firstLoad() async {
     errorMessage = null; // Induláskor nincs hiba
 
-    LatLng? initialPosition;
+    LatLng? cachedPosition;
     try {
-      initialPosition = await _locationService.getLastKnownPosition();
-    } catch (e) {
-      debugPrint("Hiba a cache pozíció lekérésnél: $e");
-    }
+      cachedPosition = await _locationService.getLastKnownPosition();
+    } catch (_) {}
 
-    if (initialPosition == null) {
+    if (cachedPosition != null && !_isDisposed) {
+      myPosition = cachedPosition;
+      mapCenter = cachedPosition;
+      notifyListeners();
+
       try {
-        initialPosition = await _locationService.determinePosition();
-      } catch (e) {
-        debugPrint("GPS hiba induláskor: $e");
-      }
-    }
-
-    if (initialPosition != null) {
-      myPosition = initialPosition;
-      mapCenter = initialPosition;
-      currentTarget = initialPosition; // <-- ÚJ SOR
-    }
-
-    try {
-      if (myPosition != null) {
         shops = await _apiService.fetchNearby(
-          myPosition!.latitude,
-          myPosition!.longitude,
+          cachedPosition.latitude,
+          cachedPosition.longitude,
         );
-        _lastFetchPosition = myPosition;
-      } else {
-        shops = await _apiService.fetchShops();
-        _lastFetchPosition = mapCenter;
+        _lastFetchPosition = cachedPosition;
+      } catch (e) {
+        debugPrint("Nem sikerült betölteni a boltokat: $e");
+        errorMessage =
+            "Nem sikerült a boltokat betölteni.\nEllenőrizd az internetkapcsolatod.";
       }
-    } catch (e) {
-      debugPrint("Bolt letöltési hiba: $e");
-      // --- ÚJ: Ha elszáll az API, beállítjuk a hibaüzenetet! ---
+    } else {
       errorMessage =
-          "Sajnos nem sikerült letölteni a boltokat.\nKérjük, ellenőrizd az internetkapcsolatot!";
+          "Nem sikerült meghatározni a helyzetedet.\nEllenőrizd a helymeghatározási engedélyeket.";
     }
 
     if (myPosition != null && errorMessage == null) {
@@ -256,7 +249,7 @@ class HomeController extends ChangeNotifier {
   }
 
   void onMapPositionChanged(CameraPosition position) {
-    // --- ÚJ: Kamera adatainak mentése és forgás figyelése ---
+    // --- Kamera adatainak mentése és forgás figyelése ---
     currentTarget = position.target;
     currentZoom = position.zoom;
 
@@ -273,7 +266,7 @@ class HomeController extends ChangeNotifier {
     });
   }
 
-  // --- ÚJ: Saját iránytű kattintás logika ---
+  // --- Iránytű kattintás logika ---
   Future<void> resetCompass() async {
     if (mapController == null) return;
     try {
@@ -323,7 +316,6 @@ class HomeController extends ChangeNotifier {
       _lastFetchPosition = newCenter;
     } catch (e) {
       debugPrint("Hiba a terület keresésekor: $e");
-      // Ide esetleg később tehetünk egy kis "Toast" értesítést
     } finally {
       if (!_isDisposed) {
         isFetchingArea = false;
@@ -341,6 +333,51 @@ class HomeController extends ChangeNotifier {
     } catch (e) {
       debugPrint("Animációs hiba: $e");
     }
+  }
+
+  // ---------------------------------------------------------------
+  // KERESÉSI PIN: Kezelés
+  // ---------------------------------------------------------------
+
+  /// Keresési eredmény beállítása: pin lerakása + kamera mozgatása.
+  /// Az extent alapján dönt a zoom szintről:
+  ///   - pontos cím (nincs extent) → zoom 17
+  ///   - utca/város (van extent) → bounding box-ra illesztés
+  Future<void> setSearchPin(PlaceSuggestion place) async {
+    if (_isDisposed || mapController == null) return;
+
+    searchPinPosition = LatLng(place.lat, place.lon);
+    notifyListeners();
+
+    final LatLngBounds? bounds = place.bounds;
+
+    if (bounds != null) {
+      // Van bounding box → ráközelítünk az extent-re
+      // A padding biztosítja, hogy ne legyenek szélén a határok
+      try {
+        await mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(bounds, 60.0),
+        );
+      } catch (e) {
+        debugPrint("Bounds animáció hiba: $e");
+        // Fallback: egyszerű közelítés
+        await animatedMapMove(searchPinPosition!, 14.0);
+      }
+    } else if (place.isExactAddress) {
+      // Pontos cím, nincs extent → nagyon közel zoomolunk
+      await animatedMapMove(searchPinPosition!, 17.0);
+    } else {
+      // Egyéb (pl. POI, locality) → közepes zoom
+      await animatedMapMove(searchPinPosition!, 15.0);
+    }
+  }
+
+  /// Keresési pin eltávolítása a térképről.
+  void clearSearchPin() {
+    if (searchPinPosition == null) return;
+
+    searchPinPosition = null;
+    notifyListeners();
   }
 
   String getFormattedDistance(Shop shop) {

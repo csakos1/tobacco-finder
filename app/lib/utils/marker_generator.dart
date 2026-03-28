@@ -10,6 +10,9 @@ class MarkerGenerator {
   // Világoskék (Sötét módhoz) - A main.dart-ban beállított Colors.blue alapszínhez igazodva
   static const Color _lightBlue = ui.Color.fromARGB(255, 40, 108, 172);
 
+  // Keresési pin szín — élénk piros, hogy jól megkülönböztethető legyen
+  static const Color _searchPinColor = Color(0xFFE53935);
+
   static Future<BitmapDescriptor> createShopMarker(
     bool isOpen,
     bool isDarkMode,
@@ -115,6 +118,59 @@ class MarkerGenerator {
         center.dy - textPainter.height / 2,
       ),
     );
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(
+      physicalSize.toInt(),
+      physicalSize.toInt(),
+    );
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    return BitmapDescriptor.fromBytes(
+      byteData!.buffer.asUint8List(),
+      size: const Size(logicalSize, logicalSize),
+    );
+  }
+
+  /// Keresési pin — piros szín, fehér kör középen.
+  /// Vizuálisan elkülönül a kék boltos pinektől.
+  static Future<BitmapDescriptor> createSearchPinMarker() async {
+    const double logicalSize = 50.0;
+    const double dpr = 3.0;
+    const double physicalSize = logicalSize * dpr;
+
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // Piros location_on ikon
+    final TextPainter iconPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+    );
+    iconPainter.text = TextSpan(
+      text: String.fromCharCode(Icons.location_on.codePoint),
+      style: TextStyle(
+        fontSize: logicalSize,
+        fontFamily: Icons.location_on.fontFamily,
+        color: _searchPinColor,
+      ),
+    );
+    iconPainter.layout();
+    iconPainter.paint(canvas, const Offset(0.0, 0.0));
+
+    // Fehér kör a közepén (keresés ikon effekt)
+    final Paint dotPaint = Paint()..color = Colors.white;
+    final Paint borderPaint = Paint()
+      ..color = _searchPinColor
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    const Offset dotCenter = Offset(logicalSize / 2, logicalSize * 0.38);
+    const double dotRadius = 6.0;
+
+    canvas.drawCircle(dotCenter, dotRadius, dotPaint);
+    canvas.drawCircle(dotCenter, dotRadius, borderPaint);
 
     final ui.Image image = await pictureRecorder.endRecording().toImage(
       physicalSize.toInt(),
