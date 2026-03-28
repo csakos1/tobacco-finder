@@ -337,6 +337,7 @@ class _ShopListState extends State<ShopList> {
                                         height: 56,
                                         child: ElevatedButton.icon(
                                           onPressed: () {
+                                            HapticService.lightImpact();
                                             widget.onShopSelected(shop);
                                           },
                                           icon: const Icon(Icons.map_rounded),
