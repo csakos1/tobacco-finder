@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/place_suggestion.dart';
+import '../models/geocoding_result.dart';
 import '../services/geocoding_service.dart';
 
 class PlaceSearchBar extends StatefulWidget {
@@ -42,6 +43,14 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
   /// Az utolsó nem-üres suggestions lista.
   /// A bezáró animáció alatt még ezt rendereljük, hogy ne ugorjon üresre.
   List<PlaceSuggestion> _lastNonEmptySuggestions = [];
+
+  /// Aktuális hibatípus — null, ha nincs hiba.
+  /// Nem üres lista és hiba egyszerre nem fordulhat elő,
+  /// mert hiba esetén a _suggestions mindig [].
+  GeocodingErrorKind? _errorKind;
+
+  /// Nincs találat jelzés — true, ha a keresés sikeres volt, de 0 eredmény jött.
+  bool _isEmptyResult = false;
 
   /// Nyomon követjük, hogy a billentyűzet látható volt-e az előző frame-ben.
   bool _wasKeyboardVisible = false;
@@ -92,6 +101,7 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
 
     if (query.trim().length < 3) {
       _setSuggestions([]);
+      _clearStatusFlags();
       setState(() => _isLoading = false);
       return;
     }
@@ -99,18 +109,59 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
     setState(() => _isLoading = true);
 
     _debounce = Timer(const Duration(milliseconds: 500), () async {
-      final results = await _geocodingService.searchPlaces(query);
-      if (mounted) {
-        _setSuggestions(results);
-        setState(() => _isLoading = false);
+      final result = await _geocodingService.searchPlaces(query);
+      if (!mounted) return;
+
+      switch (result) {
+        case GeocodingSuccess(:final suggestions):
+          _setSuggestions(suggestions);
+          setState(() {
+            _isLoading = false;
+            _errorKind = null;
+            _isEmptyResult = suggestions.isEmpty;
+          });
+          // Ha nincs találat, megmutatjuk a "nincs találat" panelt
+          if (suggestions.isEmpty) {
+            _showStatusPanel();
+          }
+
+        case GeocodingError(:final kind):
+          _setSuggestions([]);
+          setState(() {
+            _isLoading = false;
+            _errorKind = kind;
+            _isEmptyResult = false;
+          });
+          // Hiba esetén megmutatjuk a hiba panelt
+          _showStatusPanel();
       }
     });
   }
 
+  /// Állapotjelző flagek törlése (hiba / nincs találat).
+  void _clearStatusFlags() {
+    if (_errorKind != null || _isEmptyResult) {
+      setState(() {
+        _errorKind = null;
+        _isEmptyResult = false;
+      });
+    }
+  }
+
+  /// A státusz panel (hiba vagy "nincs találat") megjelenítése animációval.
+  /// Csak akkor indít forward-ot, ha az animáció még nincs kinyitva.
+  void _showStatusPanel() {
+    if (_listAnimController.status != AnimationStatus.completed &&
+        _listAnimController.status != AnimationStatus.forward) {
+      _listAnimController.forward();
+    }
+  }
+
   /// Központi setter: kezeli az animáció indítását is.
   void _setSuggestions(List<PlaceSuggestion> newSuggestions) {
-    final bool wasEmpty = _suggestions.isEmpty;
-    final bool willBeEmpty = newSuggestions.isEmpty;
+    final bool wasVisible =
+        _suggestions.isNotEmpty || _errorKind != null || _isEmptyResult;
+    final bool willBeVisible = newSuggestions.isNotEmpty;
 
     setState(() {
       _suggestions = newSuggestions;
@@ -119,11 +170,14 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
       }
     });
 
-    if (wasEmpty && !willBeEmpty) {
+    if (!wasVisible && willBeVisible) {
       // Lista megjelenik → forward animáció
       _listAnimController.forward();
-    } else if (!wasEmpty && willBeEmpty) {
-      // Lista eltűnik → reverse animáció
+    } else if (wasVisible &&
+        !willBeVisible &&
+        _errorKind == null &&
+        !_isEmptyResult) {
+      // Lista eltűnik (és nincs hiba/üres panel sem) → reverse animáció
       _listAnimController.reverse();
     }
   }
@@ -132,10 +186,21 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
     // Először unfocus, utána setState — így a billentyűzet NEM jön vissza
     _focusNode.unfocus();
     _setSuggestions([]);
+    _clearStatusFlags();
     setState(() {
       _controller.text = place.name;
     });
     widget.onPlaceSelected(place);
+  }
+
+  /// Újrapróbálkozás: az aktuális szövegre újra keres.
+  void _retrySearch() {
+    final query = _controller.text;
+    if (query.trim().length >= 3) {
+      _clearStatusFlags();
+      _listAnimController.reverse();
+      _onSearchChanged(query);
+    }
   }
 
   /// Publikus metódus: keresés teljes törlése kívülről (pl. boltos pin koppintás).
@@ -144,6 +209,7 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
     _debounce?.cancel();
     _focusNode.unfocus();
     _setSuggestions([]);
+    _clearStatusFlags();
     setState(() {
       _controller.clear();
       _isLoading = false;
@@ -234,10 +300,19 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
   /// Animált wrapper: SizeTransition + FadeTransition.
   /// A Flexible KÖZVETLENÜL a Column gyereke marad → nem töri el a flex-et.
   Widget _buildAnimatedSuggestionsList() {
-    // Ha a lista üres ÉS az animáció NEM játszik épp → a cache-elt listát mutatjuk
-    final displayItems = _suggestions.isNotEmpty
-        ? _suggestions
-        : _lastNonEmptySuggestions;
+    // Tartalom meghatározása: hiba > üres találat > normál lista
+    final Widget content;
+    if (_errorKind != null) {
+      content = _buildErrorTile();
+    } else if (_isEmptyResult) {
+      content = _buildEmptyResultTile();
+    } else {
+      // Ha a lista üres ÉS az animáció NEM játszik épp → a cache-elt listát mutatjuk
+      final displayItems = _suggestions.isNotEmpty
+          ? _suggestions
+          : _lastNonEmptySuggestions;
+      content = _buildSuggestionListView(displayItems);
+    }
 
     return Flexible(
       child: SizeTransition(
@@ -252,62 +327,156 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
             ),
             elevation: 4.0,
             clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                // A Flexible már biztosít bounded constraints-et.
-                Scrollbar(
-                  radius: const Radius.circular(8),
-                  thickness: 4,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    physics: const BouncingScrollPhysics(),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: displayItems.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final place = displayItems[index];
-                      return ListTile(
-                        leading: const Icon(Icons.location_on_outlined),
-                        title: Text(place.name),
-                        subtitle: Text(place.formattedAddress),
-                        onTap: () => _selectPlace(place),
-                      );
-                    },
-                  ),
-                ),
-
-                // Fade effekt a lista alján
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 24,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(16),
-                          bottomRight: Radius.circular(16),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Theme.of(context).cardColor.withOpacity(0.0),
-                            Theme.of(context).cardColor,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: content,
           ),
         ),
       ),
     );
+  }
+
+  /// Normál találati lista ScrollView-val és fade effekttel.
+  Widget _buildSuggestionListView(List<PlaceSuggestion> displayItems) {
+    return Stack(
+      children: [
+        // A Flexible már biztosít bounded constraints-et.
+        Scrollbar(
+          radius: const Radius.circular(8),
+          thickness: 4,
+          child: ListView.separated(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            physics: const BouncingScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            itemCount: displayItems.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final place = displayItems[index];
+              return ListTile(
+                leading: const Icon(Icons.location_on_outlined),
+                title: Text(place.name),
+                subtitle: Text(place.formattedAddress),
+                onTap: () => _selectPlace(place),
+              );
+            },
+          ),
+        ),
+
+        // Fade effekt a lista alján
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 24,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Theme.of(context).cardColor.withOpacity(0.0),
+                    Theme.of(context).cardColor,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// "Nincs találat" állapotjelző tile.
+  Widget _buildEmptyResultTile() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+      child: Row(
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Nincs találat erre a keresésre.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Hálózati/szerver hiba állapotjelző tile "Újra" gombbal.
+  Widget _buildErrorTile() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+      child: Row(
+        children: [
+          Icon(
+            _errorIconForKind(_errorKind!),
+            color: colorScheme.error,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _errorMessageForKind(_errorKind!),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: _retrySearch,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Újra'),
+            style: TextButton.styleFrom(
+              foregroundColor: colorScheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Magyar nyelvű hibaüzenet a hibatípus alapján.
+  String _errorMessageForKind(GeocodingErrorKind kind) {
+    switch (kind) {
+      case GeocodingErrorKind.network:
+        return 'Nincs internetkapcsolat.';
+      case GeocodingErrorKind.timeout:
+        return 'A keresés időtúllépés miatt sikertelen.';
+      case GeocodingErrorKind.server:
+        return 'A keresőszerver átmenetileg nem elérhető.';
+      case GeocodingErrorKind.unknown:
+        return 'Nem sikerült végrehajtani a keresést.';
+    }
+  }
+
+  /// Ikon a hibatípus alapján.
+  IconData _errorIconForKind(GeocodingErrorKind kind) {
+    switch (kind) {
+      case GeocodingErrorKind.network:
+        return Icons.wifi_off_rounded;
+      case GeocodingErrorKind.timeout:
+        return Icons.timer_off_rounded;
+      case GeocodingErrorKind.server:
+        return Icons.cloud_off_rounded;
+      case GeocodingErrorKind.unknown:
+        return Icons.error_outline_rounded;
+    }
   }
 }
