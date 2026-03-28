@@ -179,6 +179,7 @@ class _ShopListState extends State<ShopList> {
                       // 1. Az Alap kártya rész (Mindig látszik)
                       InkWell(
                         onTap: () {
+                          HapticService.lightImpact();
                           setState(() {
                             _expandedShopId = isExpanded ? null : shop.id;
                           });
