@@ -8,6 +8,7 @@ import '../models/place_suggestion.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../utils/shop_logic.dart';
+import '../main.dart' show initialMapPosition;
 
 enum ShopFilter { none, openNow, nonStop }
 
@@ -53,6 +54,16 @@ class HomeController extends ChangeNotifier {
   bool _isDisposed = false;
 
   HomeController() {
+    // ---------------------------------------------------------------
+    // Elmentett pozíció használata kezdő térképközéppontnak.
+    // Így cold start-nál nem Budapest közepén nyílik a térkép,
+    // hanem az utolsó ismert tartózkodási helyen.
+    // ---------------------------------------------------------------
+    final savedPosition = initialMapPosition;
+    if (savedPosition != null) {
+      mapCenter = savedPosition;
+      currentTarget = savedPosition;
+    }
     _firstLoad();
   }
 
@@ -84,8 +95,20 @@ class HomeController extends ChangeNotifier {
 
   void setMapController(GoogleMapController controller) {
     mapController = controller;
-    Future.delayed(const Duration(milliseconds: 1600), () {
-      if (!_isDisposed) {
+    _tryRevealMap();
+  }
+
+  /// A térkép fedő overlay eltávolítása.
+  /// Mindkét feltétel teljesülése kell:
+  ///   1. A GoogleMapController létrejött (onMapCreated lefutott)
+  ///   2. Az első adatbetöltés befejeződött (isLoading == false)
+  /// Ezután egy rövid késleltetéssel várunk a tile-ok renderelésére.
+  void _tryRevealMap() {
+    if (isMapReady || _isDisposed) return;
+    if (mapController == null || isLoading) return;
+
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (!_isDisposed && !isMapReady) {
         isMapReady = true;
         notifyListeners();
       }
@@ -136,6 +159,8 @@ class HomeController extends ChangeNotifier {
     if (cachedPosition != null && !_isDisposed) {
       myPosition = cachedPosition;
       mapCenter = cachedPosition;
+      // Mentjük a pozíciót cold start fallback-nek
+      _locationService.savePosition(cachedPosition);
       notifyListeners();
 
       try {
@@ -161,6 +186,10 @@ class HomeController extends ChangeNotifier {
     if (!_isDisposed) {
       isLoading = false;
       notifyListeners();
+
+      // Ellenőrizzük, hogy a térkép kész-e a megjelenítésre
+      _tryRevealMap();
+
       if (myPosition != null && errorMessage == null) {
         animatedMapMove(myPosition!, 15.0);
       }
@@ -186,6 +215,7 @@ class HomeController extends ChangeNotifier {
                     freshPosition.longitude,
                   );
                   myPosition = freshPosition;
+                  _locationService.savePosition(freshPosition);
                   _sortShopsByDistance();
                   notifyListeners();
                   if (selectedIndex == 0) {
@@ -194,6 +224,7 @@ class HomeController extends ChangeNotifier {
                 } catch (_) {}
               } else {
                 myPosition = freshPosition;
+                _locationService.savePosition(freshPosition);
                 _sortShopsByDistance();
                 notifyListeners();
               }
@@ -230,6 +261,7 @@ class HomeController extends ChangeNotifier {
           myPosition = freshPosition;
           shops = newShops;
           _lastFetchPosition = freshPosition;
+          _locationService.savePosition(freshPosition);
           _sortShopsByDistance();
           notifyListeners();
 

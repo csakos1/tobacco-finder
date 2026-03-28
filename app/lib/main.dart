@@ -1,13 +1,20 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
+import 'services/location_service.dart';
 
 // Ezzel a globális változóval kezeljük a téma váltást az egész appban
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 // Haptic feedback be/kikapcsolás — alapértelmezetten bekapcsolva
 final ValueNotifier<bool> hapticNotifier = ValueNotifier(true);
+
+/// Az utolsó mentett pozíció — cold start-nál erre nyílik a térkép
+/// a Budapest közép hardkódolt érték helyett.
+LatLng? initialMapPosition;
 
 void main() async {
   // Ez kötelező, ha a runApp előtt async hívásokat (pl. SharedPreferences) végzünk
@@ -25,6 +32,9 @@ void main() async {
   // Haptic feedback beállítás betöltése (alapértelmezetten true)
   hapticNotifier.value = prefs.getBool('haptic_enabled') ?? true;
 
+  // Utolsó mentett pozíció betöltése (cold start-hoz)
+  initialMapPosition = LocationService.loadSavedPosition(prefs);
+
   runApp(const MyApp());
 }
 
@@ -33,7 +43,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A ValueListenableBuilder figyeli, ha változik a téma beállítás
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (context, currentMode, child) {
@@ -41,10 +50,8 @@ class MyApp extends StatelessWidget {
           title: 'Dohánybolt Kereső',
           debugShowCheckedModeBanner: false,
 
-          // --- TÉMA MÓD (Világos / Sötét / Rendszer) ---
           themeMode: currentMode,
 
-          // --- VILÁGOS TÉMA (A meglévő kódod) ---
           theme: ThemeData(
             useMaterial3: true,
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -62,7 +69,6 @@ class MyApp extends StatelessWidget {
                 ),
           ),
 
-          // --- SÖTÉT TÉMA ---
           darkTheme: ThemeData(
             useMaterial3: true,
             colorScheme: ColorScheme.fromSeed(

@@ -153,6 +153,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
 
+                  // ---------------------------------------------------------------
+                  // TÉRKÉP FEDŐ RÉTEG: A téma surface színével elfedi a térképet
+                  // a Google Maps tile-ok és a pozíció betöltődéséig.
+                  // Smooth fade-out animációval tűnik el, amikor minden kész.
+                  // ---------------------------------------------------------------
+                  if (_controller.selectedIndex == 0)
+                    _MapCoverOverlay(isMapReady: _controller.isMapReady),
+
                   // --- Iránytű ---
                   if (_controller.selectedIndex == 0 &&
                       _controller.isMapRotated)
@@ -326,6 +334,66 @@ class _KeyboardAwareFab extends StatelessWidget {
               ),
             )
           : const Icon(Icons.my_location),
+    );
+  }
+}
+
+/// Térkép fedő overlay — elfedi a Google Maps betöltődés alatti
+/// fehér/bézs hátterét és a pixeles tile-renderelést.
+/// A surface színt használja, ami illeszkedik a sötét és világos témához is.
+class _MapCoverOverlay extends StatefulWidget {
+  final bool isMapReady;
+  const _MapCoverOverlay({required this.isMapReady});
+
+  @override
+  State<_MapCoverOverlay> createState() => _MapCoverOverlayState();
+}
+
+class _MapCoverOverlayState extends State<_MapCoverOverlay> {
+  /// Ha a fade-out animáció lefutott, teljesen eltávolítjuk a widgetet.
+  bool _dismissed = false;
+
+  @override
+  void didUpdateWidget(_MapCoverOverlay old) {
+    super.didUpdateWidget(old);
+    if (widget.isMapReady && !old.isMapReady) {
+      // Az AnimatedOpacity 400ms-ig fut → utána biztonságosan eltávolítjuk
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) setState(() => _dismissed = true);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Ha a fade-out lefutott, üres widgetet adunk vissza
+    if (_dismissed) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        // Ha a térkép kész, ne blokkoljuk a touch eseményeket
+        ignoring: widget.isMapReady,
+        child: AnimatedOpacity(
+          opacity: widget.isMapReady ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOut,
+          child: Container(
+            color: theme.colorScheme.surface,
+            child: Center(
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
