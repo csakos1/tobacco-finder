@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart';
 import '../models/place_suggestion.dart';
 
 class GeocodingService {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 5),
+    ),
+  );
 
   /// Magyarország bounding box-a a Photon API szűréséhez.
   /// Formátum: minLon,minLat,maxLon,maxLat

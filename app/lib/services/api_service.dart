@@ -4,7 +4,12 @@ import '../models/shop.dart';
 import '../config.dart';
 
 class ApiService {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+    ),
+  );
 
   final String _baseUrl = Config.apiUrl;
 
