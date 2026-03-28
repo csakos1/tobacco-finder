@@ -96,13 +96,53 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
     super.dispose();
   }
 
+  // ---------------------------------------------------------------
+  // KÖZPONTI PANEL VISIBILITY VEZÉRLŐ
+  //
+  // Egyetlen forrás az igazságra: a panel PONTOSAN akkor legyen
+  // nyitva, ha van megjelenítendő tartalom (találatok VAGY hiba
+  // VAGY "nincs találat"). Minden állapotváltozás után ez fut le,
+  // így sosem maradhat inkonzisztens a flag-ek és az animáció között.
+  //
+  // Ez a metódus váltja ki a korábbi szétszórt animáció-vezérlést
+  // ami a _setSuggestions()-ben és a _clearStatusFlags()-ben volt,
+  // és ami sorrend-függő volt → a "beragadó panel" hiba gyökere.
+  // ---------------------------------------------------------------
+  void _updatePanelVisibility() {
+    final bool shouldBeVisible =
+        _suggestions.isNotEmpty || _errorKind != null || _isEmptyResult;
+
+    if (shouldBeVisible) {
+      if (_listAnimController.status != AnimationStatus.forward &&
+          _listAnimController.status != AnimationStatus.completed) {
+        _listAnimController.forward();
+      }
+    } else {
+      if (_listAnimController.status != AnimationStatus.reverse &&
+          _listAnimController.status != AnimationStatus.dismissed) {
+        _listAnimController.reverse();
+      }
+    }
+  }
+
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
 
     if (query.trim().length < 3) {
-      _setSuggestions([]);
-      _clearStatusFlags();
-      setState(() => _isLoading = false);
+      // ---------------------------------------------------------------
+      // EXPLICIT TÖRLÉS: Minden flag-et és a cache-t is nullázzuk
+      // EGYETLEN setState-ben, UTÁNA hívjuk az _updatePanelVisibility()-t.
+      // A _lastNonEmptySuggestions-t is töröljük, mert a felhasználó
+      // szándékosan törölte a szöveget — a régi találatok irrelevánsak.
+      // ---------------------------------------------------------------
+      setState(() {
+        _suggestions = [];
+        _lastNonEmptySuggestions = [];
+        _errorKind = null;
+        _isEmptyResult = false;
+        _isLoading = false;
+      });
+      _updatePanelVisibility();
       return;
     }
 
@@ -114,82 +154,39 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
 
       switch (result) {
         case GeocodingSuccess(:final suggestions):
-          _setSuggestions(suggestions);
           setState(() {
+            _suggestions = suggestions;
+            if (suggestions.isNotEmpty) {
+              _lastNonEmptySuggestions = suggestions;
+            }
             _isLoading = false;
             _errorKind = null;
             _isEmptyResult = suggestions.isEmpty;
           });
-          // Ha nincs találat, megmutatjuk a "nincs találat" panelt
-          if (suggestions.isEmpty) {
-            _showStatusPanel();
-          }
 
         case GeocodingError(:final kind):
-          _setSuggestions([]);
           setState(() {
+            _suggestions = [];
             _isLoading = false;
             _errorKind = kind;
             _isEmptyResult = false;
           });
-          // Hiba esetén megmutatjuk a hiba panelt
-          _showStatusPanel();
       }
+
+      _updatePanelVisibility();
     });
-  }
-
-  /// Állapotjelző flagek törlése (hiba / nincs találat).
-  void _clearStatusFlags() {
-    if (_errorKind != null || _isEmptyResult) {
-      setState(() {
-        _errorKind = null;
-        _isEmptyResult = false;
-      });
-    }
-  }
-
-  /// A státusz panel (hiba vagy "nincs találat") megjelenítése animációval.
-  /// Csak akkor indít forward-ot, ha az animáció még nincs kinyitva.
-  void _showStatusPanel() {
-    if (_listAnimController.status != AnimationStatus.completed &&
-        _listAnimController.status != AnimationStatus.forward) {
-      _listAnimController.forward();
-    }
-  }
-
-  /// Központi setter: kezeli az animáció indítását is.
-  void _setSuggestions(List<PlaceSuggestion> newSuggestions) {
-    final bool wasVisible =
-        _suggestions.isNotEmpty || _errorKind != null || _isEmptyResult;
-    final bool willBeVisible = newSuggestions.isNotEmpty;
-
-    setState(() {
-      _suggestions = newSuggestions;
-      if (newSuggestions.isNotEmpty) {
-        _lastNonEmptySuggestions = newSuggestions;
-      }
-    });
-
-    if (!wasVisible && willBeVisible) {
-      // Lista megjelenik → forward animáció
-      _listAnimController.forward();
-    } else if (wasVisible &&
-        !willBeVisible &&
-        _errorKind == null &&
-        !_isEmptyResult) {
-      // Lista eltűnik (és nincs hiba/üres panel sem) → reverse animáció
-      _listAnimController.reverse();
-    }
   }
 
   void _selectPlace(PlaceSuggestion place) {
     // Először unfocus, utána setState — így a billentyűzet NEM jön vissza
     _focusNode.unfocus();
-    _setSuggestions([]);
-    _clearStatusFlags();
     setState(() {
+      _suggestions = [];
+      _errorKind = null;
+      _isEmptyResult = false;
       _controller.text = place.name;
     });
+    _updatePanelVisibility();
     widget.onPlaceSelected(place);
   }
 
@@ -197,8 +194,11 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
   void _retrySearch() {
     final query = _controller.text;
     if (query.trim().length >= 3) {
-      _clearStatusFlags();
-      _listAnimController.reverse();
+      setState(() {
+        _errorKind = null;
+        _isEmptyResult = false;
+      });
+      _updatePanelVisibility();
       _onSearchChanged(query);
     }
   }
@@ -208,12 +208,15 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
   void clearSearch() {
     _debounce?.cancel();
     _focusNode.unfocus();
-    _setSuggestions([]);
-    _clearStatusFlags();
     setState(() {
+      _suggestions = [];
+      _lastNonEmptySuggestions = [];
+      _errorKind = null;
+      _isEmptyResult = false;
       _controller.clear();
       _isLoading = false;
     });
+    _updatePanelVisibility();
   }
 
   @override
@@ -307,7 +310,8 @@ class PlaceSearchBarState extends State<PlaceSearchBar>
     } else if (_isEmptyResult) {
       content = _buildEmptyResultTile();
     } else {
-      // Ha a lista üres ÉS az animáció NEM játszik épp → a cache-elt listát mutatjuk
+      // Ha a lista üres ÉS az animáció VISSZAFELÉ játszik → a cache-elt
+      // listát rendereljük, hogy a bezáró animáció ne ugorjon üresre.
       final displayItems = _suggestions.isNotEmpty
           ? _suggestions
           : _lastNonEmptySuggestions;
