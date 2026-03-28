@@ -74,6 +74,35 @@ class _TobaccoMapState extends State<TobaccoMap> {
     _manager = _initClusterManager();
   }
 
+  // ---------------------------------------------------------------------------
+  // TÉMA-VÁLTÁS KEZELÉSE
+  //
+  // A didChangeDependencies() a helyes lifecycle hook a Theme.of(context)-ből
+  // származó változások kezelésére. A framework automatikusan meghívja, amikor
+  // bármely InheritedWidget (pl. Theme) megváltozik — tehát pontosan akkor fut,
+  // amikor a téma vált. Így a build() tisztán deklaratív maradhat.
+  // ---------------------------------------------------------------------------
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final bool themeChanged =
+        _lastIsDarkMode != null && _lastIsDarkMode != isDarkMode;
+
+    _lastIsDarkMode = isDarkMode;
+
+    if (themeChanged) {
+      // Térkép stílus frissítése az új témához
+      _mapController?.setMapStyle(
+        isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
+      );
+
+      // Klaszterező kényszerítése a markerek újrarajzolására (sötét/világos ikonok)
+      _manager.setItems(_getClusterItems());
+    }
+  }
+
   @override
   void didUpdateWidget(covariant TobaccoMap oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -186,22 +215,15 @@ class _TobaccoMapState extends State<TobaccoMap> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // BUILD — Tisztán deklaratív, side effect-ek nélkül.
+  // A téma-függő logika (stílus váltás, marker újraépítés) a
+  // didChangeDependencies()-ben történik.
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-
-    // Ha megváltozott a téma, kényszerítjük a klaszterezőt a markerek újrarajzolására
-    if (_lastIsDarkMode != null && _lastIsDarkMode != isDarkMode) {
-      _lastIsDarkMode = isDarkMode;
-      Future.microtask(() => _manager.setItems(_getClusterItems()));
-    } else {
-      _lastIsDarkMode = isDarkMode;
-    }
-
-    _mapController?.setMapStyle(
-      isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
-    );
 
     final topColor =
         theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
