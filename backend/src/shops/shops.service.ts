@@ -7,30 +7,27 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ShopsService {
   constructor(private prisma: PrismaService) {}
 
-  // 1. Bolt létrehozása (JAVÍTVA: ID generálással!)
-  async create(createShopDto: any) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  // Bolt létrehozása
+  async create(createShopDto: CreateShopDto) {
     const { name, city, address, lat, long, openingHours } = createShopDto;
 
-    // VÁLTOZÁS:
-    // 1. Beírtuk az 'id'-t az oszlopok közé.
-    // 2. Beírtuk a 'gen_random_uuid()'-t az értékek közé.
     await this.prisma.$executeRaw`
       INSERT INTO "tobacco_shops" (id, name, city, address, opening_hours, location)
-      VALUES (gen_random_uuid(), ${name}, ${city}, ${address}, ${openingHours}, ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326))
+      VALUES (
+        gen_random_uuid(),
+        ${name},
+        ${city},
+        ${address},
+        ${openingHours ? JSON.stringify(openingHours) : null},
+        ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326)
+      )
     `;
 
     return 'Bolt sikeresen hozzáadva!';
   }
 
-  // 2. Az összes bolt lekérése (Koordinátákkal együtt!)
-  // 2. Az összes bolt lekérése (Koordinátákkal és Nyitvatartással)
+  // Az összes bolt lekérése (Koordinátákkal és Nyitvatartással)
   async findAll() {
-    // FONTOS VÁLTOZÁS:
-    // Mivel a schema.prisma-ban @map("opening_hours") van, 
-    // az adatbázisban 'opening_hours' a neve.
-    // Ezt átnevezzük (AS) "openingHours"-ra, hogy a Frontend értse.
-
     const shops = await this.prisma.$queryRaw`
       SELECT id, name, address, city, 
       opening_hours as "openingHours", 
@@ -42,10 +39,8 @@ export class ShopsService {
     return shops;
   }
 
-  // 3. Csak a közeli boltok lekérése (lat, long és távolság alapján)
+  // Csak a közeli boltok lekérése (lat, long és távolság alapján)
   async findNearby(lat: number, long: number, radiusInMeters: number = 20000) {
-    // ST_DWithin: Megnézi, mi van a körzeten belül.
-    // ST_Distance: Opcionális, ha távolság szerint akarod rendezni.
     const shops = await this.prisma.$queryRaw`
       SELECT id, name, address, city, 
       opening_hours as "openingHours", 
@@ -61,7 +56,7 @@ export class ShopsService {
     return shops;
   }
 
-  // --- Ezeket a függvényeket egyelőre békén hagyjuk (később töltjük ki) ---
+  // --- Placeholder végpontok (később implementálandó) ---
 
   findOne(id: number) {
     return `This action returns a #${id} shop`;
