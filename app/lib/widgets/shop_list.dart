@@ -1,15 +1,14 @@
 // app/lib/widgets/shop_list.dart
 import 'package:flutter/material.dart';
 import '../models/shop.dart';
+import '../models/shop_filter.dart';
 import '../utils/shop_logic.dart';
 import 'opening_hours_widget.dart';
-import '../controllers/home_controller.dart';
 import '../services/haptic_service.dart';
 
 class ShopList extends StatefulWidget {
   final List<Shop> shops;
-  final String Function(Shop)
-  getDistanceText; // <-- ÚJ: Ezt kapja a Controllertől
+  final String Function(Shop) getDistanceText; // <-- Ezt kapja a Controllertől
   final Function(Shop) onShopSelected;
   final ShopFilter currentFilter;
   final Function(ShopFilter) onFilterChanged;
@@ -38,7 +37,6 @@ class _ShopListState extends State<ShopList> {
     final textTheme = Theme.of(context).textTheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // KIVETTÜK A RENDEZÉSI LOGIKÁT!
     // A widget.shops már alapból távolság szerint rendezve érkezik a Controllertől.
 
     final scrollView = CustomScrollView(
@@ -91,7 +89,7 @@ class _ShopListState extends State<ShopList> {
                 ),
                 const SizedBox(width: 12),
 
-                // "0-24" gomb (A korábban javított fix szélességgel!)
+                // "0-24" gomb
                 FilterChip(
                   label: const SizedBox(width: 32, child: Text("0-24")),
                   selected: widget.currentFilter == ShopFilter.nonStop,
@@ -146,7 +144,6 @@ class _ShopListState extends State<ShopList> {
                 final shop = widget.shops[index];
                 bool isOpen = ShopLogic.isOpenNow(shop.openingHours);
 
-                // ÚJ, LETISZTULT LOGIKA: Csak megkérjük a Controllert, hogy adja ide a kész szöveget
                 String distanceText = widget.getDistanceText(shop);
 
                 // --- SZÍNEK ---

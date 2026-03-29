@@ -8,6 +8,7 @@ import '../widgets/shop_details_modal.dart';
 import '../widgets/offline_banner.dart';
 import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
+import '../controllers/map_state_controller.dart';
 import '../widgets/place_search_bar.dart';
 import 'dart:math' as math;
 import '../services/haptic_service.dart';
@@ -32,6 +33,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final HomeController _controller;
 
+  /// Kényelmi getter — a térkép UI állapotát a HomeController-en
+  /// keresztül érjük el, de rövidebb hivatkozás kedvéért.
+  MapStateController get _mapState => _controller.mapState;
+
   /// GlobalKey a PlaceSearchBar elérésére (keresés kívülről történő törléséhez).
   final _searchBarKey = GlobalKey<PlaceSearchBarState>();
 
@@ -55,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Keresés teljes megszüntetése: pin eltávolítás + keresősáv törlés.
   /// Hívódik amikor a felhasználó egy boltos/klaszter pinre koppint.
   void _dismissSearch() {
-    _controller.clearSearchPin();
+    _mapState.clearSearchPin();
     _searchBarKey.currentState?.clearSearch();
   }
 
@@ -83,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _controller.setSelectedIndex(0);
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _controller.animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
+        _mapState.animatedMapMove(LatLng(shop.lat!, shop.long!), 16.0);
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _showShopDetails(shop);
         });
@@ -100,6 +105,16 @@ class _HomeScreenState extends State<HomeScreen> {
     // Minden viewInsets-függő widget saját maga olvassa ki izoláltan.
     // ---------------------------------------------------------------
 
+    // ---------------------------------------------------------------
+    // KÜLSŐ BUILDER: A HomeController-re figyel.
+    //
+    // Ez újra fut, ha: boltlista, isLoading, errorMessage,
+    // selectedIndex, filter, isOffline, isLocating, isFetchingArea
+    // bármelyike változik.
+    //
+    // NEM fut újra, ha: csak a térkép bearing/zoom/searchPin változott
+    // (azokat a MapStateController kezeli, saját belső builder-ekkel).
+    // ---------------------------------------------------------------
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
@@ -142,24 +157,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       TobaccoMap(
                         shops: _controller.filteredShops,
                         myPosition: _controller.myPosition,
-                        mapCenter: _controller.mapCenter,
+                        mapCenter: _mapState.mapCenter,
                         onShopSelected: _showShopDetails,
                         onCameraMove: _controller.onMapPositionChanged,
-                        onMapCreated: _controller.setMapController,
+                        onMapCreated: _controller.onMapCreated,
                         // -------------------------------------------------
                         // OFFLINE: Ha a banner látható, a Google logót
-                        // felfelé toljuk a banner magasságával, hogy ne
-                        // takarják ki egymást. Ez a GoogleMap.padding-en
-                        // keresztül működik a TobaccoMap-ben.
+                        // felfelé toljuk a banner magasságával.
                         // -------------------------------------------------
                         bottomPadding: _controller.isOffline
                             ? _offlineBannerHeight
                             : 0.0,
-                        // Térképre koppintás → billentyűzet bezárása
                         onMapTapped: _dismissKeyboard,
-                        // Keresési pin pozíciója
-                        searchPinPosition: _controller.searchPinPosition,
-                        // Boltos/klaszter pinre koppintás → keresés megszüntetése
+                        searchPinPosition: _mapState.searchPinPosition,
                         onSearchDismissed: _dismissSearch,
                       ),
                       ShopList(
@@ -167,36 +177,68 @@ class _HomeScreenState extends State<HomeScreen> {
                         getDistanceText: _controller.getFormattedDistance,
                         onShopSelected: _onShopSelectedFromList,
                         currentFilter: _controller.currentFilter,
-                        onFilterChanged: _controller.setFilter,
+                        onFilterChanged: (filter) {
+                          HapticService.lightImpact();
+                          _controller.setFilter(filter);
+                        },
                         onRefresh: _controller.refreshShops,
                       ),
                     ],
                   ),
 
                   // ---------------------------------------------------------------
-                  // TÉRKÉP FEDŐ RÉTEG: A téma surface színével elfedi a térképet
-                  // a Google Maps tile-ok és a pozíció betöltődéséig.
-                  // Smooth fade-out animációval tűnik el, amikor minden kész.
+                  // TÉRKÉP FEDŐ OVERLAY
+                  //
+                  // BELSŐ BUILDER: A MapStateController-re figyel.
+                  // Csak az isMapReady változásakor épül újra
+                  // (egyszer, az induláskor).
                   // ---------------------------------------------------------------
                   if (_controller.selectedIndex == 0)
-                    _MapCoverOverlay(isMapReady: _controller.isMapReady),
+                    ListenableBuilder(
+                      listenable: _mapState,
+                      builder: (_, __) =>
+                          _MapCoverOverlay(isMapReady: _mapState.isMapReady),
+                    ),
 
-                  // --- Iránytű ---
-                  if (_controller.selectedIndex == 0 &&
-                      _controller.isMapRotated)
+                  // ---------------------------------------------------------------
+                  // IRÁNYTŰ
+                  //
+                  // BELSŐ BUILDER: A MapStateController-re figyel.
+                  // Csak a bearing változásakor épül újra — a boltlista,
+                  // szűrő chipek, FAB és offline banner NEM rebuild-elődik.
+                  //
+                  // A Positioned a Stack közvetlen gyereke marad,
+                  // a ListenableBuilder belsejébe kerül a tényleges widget.
+                  // ---------------------------------------------------------------
+                  if (_controller.selectedIndex == 0)
                     Positioned(
                       top: 88,
                       left: 16,
-                      child: FloatingActionButton.small(
-                        heroTag: 'compass_fab',
-                        onPressed: _controller.resetCompass,
-                        backgroundColor: Theme.of(context).colorScheme.surface,
-                        foregroundColor: Theme.of(context).colorScheme.primary,
-                        elevation: 4,
-                        child: Transform.rotate(
-                          angle: -_controller.mapBearing * (math.pi / 180),
-                          child: const Icon(Icons.navigation_rounded, size: 22),
-                        ),
+                      child: ListenableBuilder(
+                        listenable: _mapState,
+                        builder: (context, _) {
+                          if (!_mapState.isMapRotated) {
+                            return const SizedBox.shrink();
+                          }
+                          return FloatingActionButton.small(
+                            heroTag: 'compass_fab',
+                            onPressed: _mapState.resetCompass,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                            elevation: 4,
+                            child: Transform.rotate(
+                              angle: -_mapState.mapBearing * (math.pi / 180),
+                              child: const Icon(
+                                Icons.navigation_rounded,
+                                size: 22,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
 
@@ -210,10 +252,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         key: _searchBarKey,
                         parentConstraintsHeight: constraints.maxHeight,
                         onPlaceSelected: (place) {
-                          _controller.setSearchPin(place);
+                          _mapState.setSearchPin(place);
                         },
                         onSearchCleared: () {
-                          _controller.clearSearchPin();
+                          _mapState.clearSearchPin();
                         },
                       ),
                     ),
