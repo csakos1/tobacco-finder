@@ -14,14 +14,21 @@ class ApiService {
   final String _baseUrl = Config.apiUrl;
 
   // ---------------------------------------------------------------
-  // ÖSSZES BOLT LEKÉRÉSE (Tartalék, ha nincs GPS pozíció)
+  // BOLTOK LEKÉRÉSE LIMITTEL (Tartalék, ha nincs GPS pozíció)
+  //
+  // A szerver oldali findAll() végpont immár LIMIT/OFFSET-tel működik.
+  // A kliens alapértelmezetten 500 boltot kér — ez a maximális
+  // ésszerű mennyiség, amit a klaszterező és a lista kezelni tud.
   //
   // Hiba esetén exception-t dob, hogy a hívó fél (controller)
   // értesülhessen róla és hibaüzenetet tudjon mutatni a usernek.
   // ---------------------------------------------------------------
-  Future<List<Shop>> fetchShops() async {
+  Future<List<Shop>> fetchShops({int limit = 500, int offset = 0}) async {
     try {
-      final response = await _dio.get(_baseUrl);
+      final response = await _dio.get(
+        _baseUrl,
+        queryParameters: {'limit': limit, 'offset': offset},
+      );
 
       if (response.statusCode == 200) {
         return await compute(_parseShops, response.data);
