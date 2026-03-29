@@ -430,6 +430,9 @@ class _KeyboardAwareFab extends StatelessWidget {
 /// Térkép fedő overlay — elfedi a Google Maps betöltődés alatti
 /// fehér/bézs hátterét és a pixeles tile-renderelést.
 /// A surface színt használja, ami illeszkedik a sötét és világos témához is.
+///
+/// Amíg a térkép nem kész, egy töltésjelző pörög a közepén,
+/// hogy a felhasználó lássa: az app dolgozik.
 class _MapCoverOverlay extends StatefulWidget {
   final bool isMapReady;
   const _MapCoverOverlay({required this.isMapReady});
@@ -467,7 +470,19 @@ class _MapCoverOverlayState extends State<_MapCoverOverlay> {
         child: AnimatedOpacity(
           opacity: widget.isMapReady ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 400),
-          child: Container(color: theme.colorScheme.surface),
+          child: Container(
+            color: theme.colorScheme.surface,
+            // ---------------------------------------------------------
+            // TÖLTÉSJELZŐ: A térkép betöltődéséig középen pörgő indikátor.
+            // Az AnimatedOpacity a teljes Container-t (háttér + indikátor)
+            // együtt fade-eli ki, tehát az indikátor is simán eltűnik.
+            // ---------------------------------------------------------
+            child: Center(
+              child: CircularProgressIndicator(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
         ),
       ),
     );
