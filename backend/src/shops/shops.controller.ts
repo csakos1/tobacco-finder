@@ -8,7 +8,8 @@ import {
   Delete,
   UseGuards,
   Req,
-  Query, // 1. MÓDOSÍTÁS: Ez kellett a paraméterek olvasásához
+  Query,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 
 import { ShopsService } from './shops.service';
@@ -20,7 +21,7 @@ import { ApiKeyGuard } from '../auth/api-key.guard';
 export class ShopsController {
   constructor(private readonly shopsService: ShopsService) {}
 
-  // --- VÉDETT VÉGPONTOK (Csak kulccsal működnek) ---
+  // --- VÉDETT VÉGPONTOK (Csak API kulccsal működnek) ---
 
   @Post()
   @UseGuards(ApiKeyGuard)
@@ -30,20 +31,23 @@ export class ShopsController {
 
   @Patch(':id')
   @UseGuards(ApiKeyGuard)
-  update(@Param('id') id: string, @Body() updateShopDto: UpdateShopDto) {
-    return this.shopsService.update(+id, updateShopDto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateShopDto: UpdateShopDto,
+  ) {
+    return this.shopsService.update(id, updateShopDto);
   }
 
   @Delete(':id')
   @UseGuards(ApiKeyGuard)
-  remove(@Param('id') id: string) {
-    return this.shopsService.remove(+id);
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shopsService.remove(id);
   }
 
-  // --- PUBLIKUS VÉGPONTOK (Bárki láthatja) ---
+  // --- PUBLIKUS VÉGPONTOK (Bárki elérheti) ---
 
-  // 2. MÓDOSÍTÁS: Itt az új közeli kereső végpont!
-  // FONTOS: Ennek a ':id' ELŐTT kell lennie, különben nem működik!
+  // FONTOS: Ennek a ':id' ELŐTT kell lennie, különben a NestJS
+  // a "nearby" stringet route paraméterként próbálná értelmezni.
   @Get('nearby')
   findNearby(
     @Query('lat') lat: string,
@@ -66,7 +70,7 @@ export class ShopsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.shopsService.findOne(+id);
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shopsService.findOne(id);
   }
 }
