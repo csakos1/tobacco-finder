@@ -7,23 +7,23 @@
 ![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-lightgrey?logo=android)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-# 🚬 Tobacco Finder — Dohánybolt Kereső
+# Tobacco Finder — Dohánybolt Kereső
 
 A full-stack mobile application that helps users in Hungary locate nearby tobacco shops on an interactive map.
 
 ---
 
-## ✨ Features
+## Features
 
-- 📍 Real-time GPS-based shop discovery
-- 🗺️ Interactive map with marker clustering
-- 🔍 Address search powered by the Photon geocoding API
-- 🕐 Opening hours display per shop
-- 🔒 API key-based backend authentication
+- Real-time GPS-based shop discovery
+- Interactive map with marker clustering
+- Address search powered by the Photon geocoding API
+- Opening hours display per shop
+- API key-based backend authentication
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 ```
 ├── app/          # Flutter mobile client (iOS & Android)
 └── backend/      # NestJS REST API
@@ -43,7 +43,7 @@ A full-stack mobile application that helps users in Hungary locate nearby tobacc
 
 ---
 
-## 📦 Database
+## Database
 
 The backend uses PostgreSQL with the PostGIS extension for efficient radius-based geospatial queries.
 
@@ -51,12 +51,12 @@ Prisma handles migrations and the ORM layer. The core model is `TobaccoShop`, st
 
 ---
 
-## 🔐 Security
+## Security
 
 All API endpoints are protected by an `ApiKeyGuard`. Requests must include a valid `x-api-key` header matching the server-side `API_KEY` environment variable.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
