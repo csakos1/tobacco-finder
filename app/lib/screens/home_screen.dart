@@ -12,6 +12,16 @@ import '../widgets/place_search_bar.dart';
 import 'dart:math' as math;
 import '../services/haptic_service.dart';
 
+// ---------------------------------------------------------------
+// AZ OFFLINE BANNER MAGASSÁGA
+//
+// A banner: vertical padding (8+8) + icon/text sor (~20px) = ~36px.
+// Ezt használjuk a Google logó és a FAB felfelé tolásához,
+// hogy ne takarják ki egymást. Egy helyen definiálva, hogy ha
+// a banner designja változik, csak itt kell módosítani.
+// ---------------------------------------------------------------
+const double _offlineBannerHeight = 40.0;
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -136,7 +146,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         onShopSelected: _showShopDetails,
                         onCameraMove: _controller.onMapPositionChanged,
                         onMapCreated: _controller.setMapController,
-                        bottomPadding: 0.0,
+                        // -------------------------------------------------
+                        // OFFLINE: Ha a banner látható, a Google logót
+                        // felfelé toljuk a banner magasságával, hogy ne
+                        // takarják ki egymást. Ez a GoogleMap.padding-en
+                        // keresztül működik a TobaccoMap-ben.
+                        // -------------------------------------------------
+                        bottomPadding: _controller.isOffline
+                            ? _offlineBannerHeight
+                            : 0.0,
                         // Térképre koppintás → billentyűzet bezárása
                         onMapTapped: _dismissKeyboard,
                         // Keresési pin pozíciója
@@ -203,7 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   // ---------------------------------------------------------------
                   // OFFLINE BANNER: A body aljára pozícionálva, a NavigationBar
                   // felett. Mindkét tabon látható, ha offline módban vagyunk.
-                  // A Positioned bottom érték a NavigationBar-ral összhangban van.
                   // ---------------------------------------------------------------
                   Positioned(
                     left: 0,
@@ -224,6 +241,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _controller.selectedIndex == 0 && _controller.errorMessage == null
               ? _KeyboardAwareFab(
                   isLocating: _controller.isLocating,
+                  // FAB-ot is felfelé toljuk offline módban
+                  bottomOffset: _controller.isOffline
+                      ? _offlineBannerHeight
+                      : 0.0,
                   onPressed: () {
                     _controller.handleLocationPress(() {
                       if (mounted) {
@@ -323,12 +344,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Izolált widget a FAB számára — CSAK ez épül újra a billentyűzet animáció során.
+/// Izolált widget a FAB számára.
+///
+/// CSAK ez épül újra a billentyűzet animáció során (MediaQuery izolálva).
+/// A [bottomOffset] extra alsó margót ad a FAB-nak, pl. ha az offline
+/// banner látható és nem akarjuk, hogy a kettő takarásban legyen.
 class _KeyboardAwareFab extends StatelessWidget {
   final bool isLocating;
   final VoidCallback onPressed;
+  final double bottomOffset;
 
-  const _KeyboardAwareFab({required this.isLocating, required this.onPressed});
+  const _KeyboardAwareFab({
+    required this.isLocating,
+    required this.onPressed,
+    this.bottomOffset = 0.0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -336,18 +366,21 @@ class _KeyboardAwareFab extends StatelessWidget {
 
     if (isKeyboardOpen) return const SizedBox.shrink();
 
-    return FloatingActionButton(
-      onPressed: isLocating ? null : onPressed,
-      tooltip: 'Helymeghatározás',
-      child: isLocating
-          ? const Padding(
-              padding: EdgeInsets.all(12.0),
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 3,
-              ),
-            )
-          : const Icon(Icons.my_location),
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomOffset),
+      child: FloatingActionButton(
+        onPressed: isLocating ? null : onPressed,
+        tooltip: 'Helymeghatározás',
+        child: isLocating
+            ? const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                ),
+              )
+            : const Icon(Icons.my_location),
+      ),
     );
   }
 }
