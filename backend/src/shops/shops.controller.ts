@@ -13,6 +13,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 
 import { ShopsService } from './shops.service';
 import { CreateShopDto } from './dto/create-shop.dto';
@@ -34,14 +35,18 @@ export class ShopsController {
   constructor(private readonly shopsService: ShopsService) {}
 
   // --- VÉDETT VÉGPONTOK (Csak API kulccsal működnek) ---
+  // A @SkipThrottle() kivonja ezeket a rate limiting alól,
+  // mivel az ApiKeyGuard már védi őket — felesleges duplán korlátozni.
 
   @Post()
+  @SkipThrottle()
   @UseGuards(ApiKeyGuard)
   create(@Body() createShopDto: CreateShopDto) {
     return this.shopsService.create(createShopDto);
   }
 
   @Patch(':id')
+  @SkipThrottle()
   @UseGuards(ApiKeyGuard)
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -51,12 +56,14 @@ export class ShopsController {
   }
 
   @Delete(':id')
+  @SkipThrottle()
   @UseGuards(ApiKeyGuard)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.shopsService.remove(id);
   }
 
   // --- PUBLIKUS VÉGPONTOK (Bárki elérheti) ---
+  // Ezeket a globális ThrottlerGuard védi: 100 kérés / 60 mp / IP.
 
   // FONTOS: Ennek a ':id' ELŐTT kell lennie, különben a NestJS
   // a "nearby" stringet route paraméterként próbálná értelmezni.
