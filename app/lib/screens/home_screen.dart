@@ -5,6 +5,7 @@ import '../models/shop.dart';
 import '../widgets/tobacco_map.dart';
 import '../widgets/shop_list.dart';
 import '../widgets/shop_details_modal.dart';
+import '../widgets/offline_banner.dart';
 import '../screens/settings_screen.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/place_search_bar.dart';
@@ -199,6 +200,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
+                  // ---------------------------------------------------------------
+                  // OFFLINE BANNER: A body aljára pozícionálva, a NavigationBar
+                  // felett. Mindkét tabon látható, ha offline módban vagyunk.
+                  // A Positioned bottom érték a NavigationBar-ral összhangban van.
+                  // ---------------------------------------------------------------
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: OfflineBanner(isVisible: _controller.isOffline),
+                  ),
+
                   // 2. RÉTEG: Hibaállapot
                   if (_controller.errorMessage != null)
                     _buildErrorOverlay(context),
@@ -379,20 +392,7 @@ class _MapCoverOverlayState extends State<_MapCoverOverlay> {
         child: AnimatedOpacity(
           opacity: widget.isMapReady ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOut,
-          child: Container(
-            color: theme.colorScheme.surface,
-            child: Center(
-              child: SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
+          child: Container(color: theme.colorScheme.surface),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import '../models/shop.dart';
 import '../models/place_suggestion.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/shop_cache_service.dart';
 import '../utils/shop_logic.dart';
 import '../main.dart' show initialMapPosition;
 
@@ -15,6 +16,7 @@ enum ShopFilter { none, openNow, nonStop }
 class HomeController extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   final LocationService _locationService = LocationService();
+  final ShopCacheService _cacheService = ShopCacheService();
 
   GoogleMapController? mapController;
   Timer? _debounce;
@@ -33,6 +35,13 @@ class HomeController extends ChangeNotifier {
 
   // --- Hibaüzenet állapota ---
   String? errorMessage;
+
+  // ---------------------------------------------------------------
+  // OFFLINE MÓD: Ha az API hívás elbukik és a cache-ből töltöttünk,
+  // ez a flag true-ra áll. A UI egy bannert mutat a usernek.
+  // Amint egy API hívás sikerül, automatikusan false-ra vált.
+  // ---------------------------------------------------------------
+  bool isOffline = false;
 
   LatLng? myPosition;
   LatLng mapCenter = const LatLng(47.50712, 19.04557);
@@ -204,100 +213,64 @@ class HomeController extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------
-  // PULL-TO-REFRESH: Friss nearby lekérés az aktuális GPS pozícióval.
+  // OFFLINE ÁLLAPOT KEZELÉS
   //
-  // Ha van ismert pozíció, azt használjuk azonnali fetch-re,
-  // közben háttérben friss GPS-t kérünk. Ha a friss pozíció
-  // jelentősen eltér (>500m), újra lekérdezzük a boltokat.
-  // Ha nincs ismert pozíció, megpróbálunk friss GPS-t szerezni.
+  // _setOnline() / _setOffline(): Egységes állapotváltás,
+  // hogy ne kelljen minden API hívás helyén kézzel kezelni.
+  // Csak akkor hív notifyListeners()-t, ha tényleg változott.
   // ---------------------------------------------------------------
-  Future<void> refreshShops() async {
-    // Azonnali fetch a jelenlegi ismert pozícióval
-    if (myPosition != null) {
-      try {
-        final freshShops = await _apiService.fetchNearby(
-          myPosition!.latitude,
-          myPosition!.longitude,
-        );
-
-        if (!_isDisposed) {
-          shops = freshShops;
-          _lastFetchPosition = myPosition;
-          _sortShopsByDistance();
-          notifyListeners();
-        }
-      } catch (e) {
-        debugPrint("Pull-to-refresh hiba: $e");
-        // Hiba esetén csendben visszatérünk — a lista marad ami volt
-        return;
-      }
-
-      // Háttérben friss GPS pozíciót is kérünk
-      try {
-        final freshPosition = await _locationService.determinePosition();
-        if (freshPosition != null && !_isDisposed) {
-          final double distMoved = Geolocator.distanceBetween(
-            myPosition!.latitude,
-            myPosition!.longitude,
-            freshPosition.latitude,
-            freshPosition.longitude,
-          );
-
-          myPosition = freshPosition;
-          _locationService.savePosition(freshPosition);
-
-          // Ha jelentősen mozdult, újra lekérdezzük
-          if (distMoved > 500) {
-            final updatedShops = await _apiService.fetchNearby(
-              freshPosition.latitude,
-              freshPosition.longitude,
-            );
-
-            if (!_isDisposed) {
-              shops = updatedShops;
-              _lastFetchPosition = freshPosition;
-              _sortShopsByDistance();
-              notifyListeners();
-            }
-          }
-        }
-      } catch (_) {
-        // GPS pontosítás opcionális — ha nem sikerül, nem baj
-      }
-    } else {
-      // Nincs pozíciónk → próbáljunk GPS-t szerezni
-      try {
-        final freshPosition = await _locationService.determinePosition();
-        if (freshPosition != null && !_isDisposed) {
-          myPosition = freshPosition;
-          _locationService.savePosition(freshPosition);
-
-          final freshShops = await _apiService.fetchNearby(
-            freshPosition.latitude,
-            freshPosition.longitude,
-          );
-
-          if (!_isDisposed) {
-            shops = freshShops;
-            _lastFetchPosition = freshPosition;
-            _sortShopsByDistance();
-            notifyListeners();
-          }
-        }
-      } catch (e) {
-        debugPrint("Pull-to-refresh GPS hiba: $e");
-      }
+  void _setOnline() {
+    if (isOffline) {
+      isOffline = false;
+      notifyListeners();
     }
   }
 
-  // --- Újrapróbálkozás metódus a UI gombjának ---
-  Future<void> retryInitialLoad() async {
-    if (isLoading) return; // Ha már tölt, ne csináljon semmit!
+  void _setOffline() {
+    if (!isOffline) {
+      isOffline = true;
+      notifyListeners();
+    }
+  }
 
-    errorMessage = null;
-    isLoading = true;
-    notifyListeners();
-    await _firstLoad();
+  // ---------------------------------------------------------------
+  // NEARBY FETCH + CACHE: Az elsődleges adatlekérési minta.
+  //
+  // 1. Megpróbálja az API-t hívni
+  // 2. Siker → cache-eli az eredményt + online állapot
+  // 3. Hiba → megpróbálja a cache-ből betölteni + offline állapot
+  // 4. Ha cache sincs → exception-t dob (a hívó kezeli)
+  //
+  // Ez a metódus a SRP (Single Responsibility) jegyében
+  // kizárólag az adat-lekérés + cache logikát tartalmazza.
+  // A UI állapotot (isLoading, errorMessage) a hívó kezeli.
+  // ---------------------------------------------------------------
+  Future<List<Shop>> _fetchNearbyWithCache(double lat, double lng) async {
+    try {
+      final shops = await _apiService.fetchNearby(lat, lng);
+
+      // Sikeres API válasz → háttérben cache-eljük
+      _setOnline();
+      _cacheService.saveNearbyShops(shops); // Fire-and-forget
+
+      return shops;
+    } catch (e) {
+      debugPrint('API hiba, cache fallback próba: $e');
+
+      // API hiba → megpróbáljuk a cache-t
+      final cachedShops = await _cacheService.loadNearbyShops();
+
+      if (cachedShops != null && cachedShops.isNotEmpty) {
+        _setOffline();
+        debugPrint(
+          'Offline mód: ${cachedShops.length} bolt betöltve a cache-ből',
+        );
+        return cachedShops;
+      }
+
+      // Nincs cache sem → továbbdobjuk a hibát
+      rethrow;
+    }
   }
 
   // ---------------------------------------------------------------
@@ -325,7 +298,7 @@ class HomeController extends ChangeNotifier {
         notifyListeners();
 
         try {
-          shops = await _apiService.fetchNearby(
+          shops = await _fetchNearbyWithCache(
             cachedPosition.latitude,
             cachedPosition.longitude,
           );
@@ -371,7 +344,7 @@ class HomeController extends ChangeNotifier {
 
                 if (distMoved > 500) {
                   try {
-                    shops = await _apiService.fetchNearby(
+                    shops = await _fetchNearbyWithCache(
                       freshPosition.latitude,
                       freshPosition.longitude,
                     );
@@ -427,7 +400,7 @@ class HomeController extends ChangeNotifier {
       final freshPosition = await gpsFuture;
 
       if (freshPosition != null) {
-        final newShops = await _apiService.fetchNearby(
+        final newShops = await _fetchNearbyWithCache(
           freshPosition.latitude,
           freshPosition.longitude,
         );
@@ -499,8 +472,15 @@ class HomeController extends ChangeNotifier {
   // megy a backend felé. Az eredményt a meglévő listába merge-öljük
   // (deduplikálva), majd ha a lista túlnőtte a limitet,
   // a _pruneDistantShops levágja a legtávolabbi boltokat.
+  //
+  // OFFLINE: Pásztázáskor NEM használunk cache fallback-et,
+  // mert a cache a korábbi pozícióhoz tartozik — félrevezető lenne.
+  // Offline módban a pásztázás csendben nem csinál semmit.
   // ---------------------------------------------------------------
   Future<void> _fetchMapArea(LatLng newCenter) async {
+    // Offline módban a pásztázás nem kérdez le új adatot
+    if (isOffline) return;
+
     if (_lastFetchPosition != null) {
       final double distMovedMeters = Geolocator.distanceBetween(
         _lastFetchPosition!.latitude,
@@ -519,6 +499,10 @@ class HomeController extends ChangeNotifier {
         newCenter.latitude,
         newCenter.longitude,
       );
+
+      // Ha eddig offline voltunk, de most sikerült → online-ra váltunk
+      _setOnline();
+
       final existingIds = shops.map((s) => s.id).toSet();
       final uniqueNewShops = newShops
           .where((s) => !existingIds.contains(s.id))
@@ -535,6 +519,8 @@ class HomeController extends ChangeNotifier {
       _lastFetchPosition = newCenter;
     } catch (e) {
       debugPrint("Hiba a terület keresésekor: $e");
+      // Pásztázásnál nem váltunk offline módra — a meglévő adattal
+      // a user továbbra is böngészhet. Csak az új terület nem tölt be.
     } finally {
       if (!_isDisposed) {
         isFetchingArea = false;
@@ -565,97 +551,152 @@ class HomeController extends ChangeNotifier {
   ///   - Utca: bounds + bőséges padding (150px) — a teljes utca látszódjon
   ///   - Város/település: fix zoom szint (13–14) a pont közepére
   ///     (A Photon adminisztratív extent-je városoknál gyakran túl nagy,
-  ///     pl. Siófok extent-je kiterjed a fél Balatonra)
-  Future<void> setSearchPin(PlaceSuggestion place) async {
-    if (_isDisposed || mapController == null) return;
-
+  ///     pl. egy megyei jogú város kiterjedése átfoghat sok tíz km-t.)
+  void setSearchPin(PlaceSuggestion place) {
     searchPinPosition = LatLng(place.lat, place.lon);
     notifyListeners();
 
-    if (place.isExactAddress) {
-      // Pontos cím → szoros közelítés
-      await animatedMapMove(searchPinPosition!, 17.0);
-    } else if (place.isStreet) {
-      // Utca → bounds-ot használjuk ha van, nagy paddinggel
-      final LatLngBounds? bounds = place.bounds;
-      if (bounds != null) {
-        await _animateToBounds(bounds, padding: 150.0, fallbackZoom: 16.0);
-      } else {
-        await animatedMapMove(searchPinPosition!, 16.0);
-      }
-    } else if (place.isSettlement) {
-      // Város/település → fix zoom szint, NEM az extent alapján.
-      // A Photon admin extent-je megbízhatatlan: kisebb városoknál (pl. Siófok)
-      // az adminisztratív határ sokkal nagyobb mint a tényleges beépített terület.
-      final double zoom = _settlementZoom(place.type);
-      await animatedMapMove(searchPinPosition!, zoom);
+    final type = place.type;
+
+    if (type == 'house') {
+      // Pontos cím → közeli zoom, nincs extent
+      animatedMapMove(searchPinPosition!, 17.0);
+    } else if (type == 'street' && place.extent != null) {
+      // Utca → extent bounds használata
+      final ext = place.extent!;
+      final bounds = LatLngBounds(
+        southwest: LatLng(ext[1], ext[0]),
+        northeast: LatLng(ext[3], ext[2]),
+      );
+      mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 150.0));
+    } else if (type == 'city' || type == 'locality') {
+      animatedMapMove(searchPinPosition!, 13.0);
+    } else if (type == 'district' || type == 'county' || type == 'state') {
+      animatedMapMove(searchPinPosition!, 14.0);
     } else {
-      // Egyéb típus (pl. locality, region, POI)
-      final LatLngBounds? bounds = place.bounds;
-      if (bounds != null) {
-        await _animateToBounds(bounds, padding: 100.0, fallbackZoom: 14.0);
-      } else {
-        await animatedMapMove(searchPinPosition!, 15.0);
+      // Egyéb (pl. POI) → közepes zoom
+      animatedMapMove(searchPinPosition!, 15.0);
+    }
+  }
+
+  void clearSearchPin() {
+    if (searchPinPosition != null) {
+      searchPinPosition = null;
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // PULL-TO-REFRESH: Friss nearby lekérés az aktuális GPS pozícióval.
+  //
+  // Ha van ismert pozíció, azt használjuk azonnali fetch-re,
+  // közben háttérben friss GPS-t kérünk. Ha a friss pozíció
+  // jelentősen eltér (>500m), újra lekérdezzük a boltokat.
+  // Ha nincs ismert pozíció, megpróbálunk friss GPS-t szerezni.
+  // ---------------------------------------------------------------
+  Future<void> refreshShops() async {
+    // Azonnali fetch a jelenlegi ismert pozícióval
+    if (myPosition != null) {
+      try {
+        final freshShops = await _fetchNearbyWithCache(
+          myPosition!.latitude,
+          myPosition!.longitude,
+        );
+
+        if (!_isDisposed) {
+          shops = freshShops;
+          _lastFetchPosition = myPosition;
+          _sortShopsByDistance();
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint("Pull-to-refresh hiba: $e");
+        // Hiba esetén csendben visszatérünk — a lista marad ami volt
+        return;
+      }
+
+      // Háttérben friss GPS pozíciót is kérünk
+      try {
+        final freshPosition = await _locationService.determinePosition();
+        if (freshPosition != null && !_isDisposed) {
+          final double distMoved = Geolocator.distanceBetween(
+            myPosition!.latitude,
+            myPosition!.longitude,
+            freshPosition.latitude,
+            freshPosition.longitude,
+          );
+
+          myPosition = freshPosition;
+          _locationService.savePosition(freshPosition);
+
+          // Ha jelentősen mozdult, újra lekérdezzük
+          if (distMoved > 500) {
+            final updatedShops = await _fetchNearbyWithCache(
+              freshPosition.latitude,
+              freshPosition.longitude,
+            );
+
+            if (!_isDisposed) {
+              shops = updatedShops;
+              _lastFetchPosition = freshPosition;
+              _sortShopsByDistance();
+              notifyListeners();
+            }
+          }
+        }
+      } catch (_) {
+        // GPS pontosítás opcionális — ha nem sikerül, nem baj
+      }
+    } else {
+      // Nincs pozíciónk → próbáljunk GPS-t szerezni
+      try {
+        final freshPosition = await _locationService.determinePosition();
+        if (freshPosition != null && !_isDisposed) {
+          myPosition = freshPosition;
+          _locationService.savePosition(freshPosition);
+
+          final freshShops = await _fetchNearbyWithCache(
+            freshPosition.latitude,
+            freshPosition.longitude,
+          );
+
+          if (!_isDisposed) {
+            shops = freshShops;
+            _lastFetchPosition = freshPosition;
+            _sortShopsByDistance();
+            notifyListeners();
+          }
+        }
+      } catch (e) {
+        debugPrint("Pull-to-refresh GPS hiba: $e");
       }
     }
   }
 
-  /// Bounds-ra illesztés fallback-kel.
-  Future<void> _animateToBounds(
-    LatLngBounds bounds, {
-    required double padding,
-    required double fallbackZoom,
-  }) async {
-    if (_isDisposed || mapController == null) return;
-    try {
-      await mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, padding),
-      );
-    } catch (e) {
-      debugPrint("Bounds animáció hiba: $e");
-      final center = LatLng(
-        (bounds.northeast.latitude + bounds.southwest.latitude) / 2,
-        (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
-      );
-      await animatedMapMove(center, fallbackZoom);
-    }
-  }
-
-  /// Település típusához illő zoom szint.
-  double _settlementZoom(String? type) {
-    switch (type) {
-      case 'city':
-        return 13.0;
-      case 'town':
-        return 13.5;
-      case 'village':
-        return 14.5;
-      case 'district':
-      case 'borough':
-        return 14.0;
-      default:
-        return 13.0;
-    }
-  }
-
-  /// Keresési pin eltávolítása a térképről.
-  void clearSearchPin() {
-    if (searchPinPosition == null) return;
-
-    searchPinPosition = null;
+  // --- Újrapróbálkozás metódus a UI gombjának ---
+  Future<void> retryInitialLoad() async {
+    if (isLoading) return; // Ha már tölt, ne csináljon semmit!
+    errorMessage = null;
+    isLoading = true;
     notifyListeners();
+    await _firstLoad();
   }
 
+  // ---------------------------------------------------------------
+  // TÁVOLSÁG SZÖVEG: Formázott távolság a felhasználótól.
+  // ---------------------------------------------------------------
   String getFormattedDistance(Shop shop) {
-    if (myPosition == null || shop.lat == null || shop.long == null) return "";
-    final double dist = Geolocator.distanceBetween(
+    if (myPosition == null || shop.lat == null || shop.long == null) return '';
+    final dist = Geolocator.distanceBetween(
       myPosition!.latitude,
       myPosition!.longitude,
       shop.lat!,
       shop.long!,
     );
-    return dist > 1000
-        ? "${(dist / 1000).toStringAsFixed(1)} km"
-        : "${dist.round()} m";
+    if (dist < 1000) {
+      return '${dist.round()} m';
+    } else {
+      return '${(dist / 1000).toStringAsFixed(1)} km';
+    }
   }
 }
