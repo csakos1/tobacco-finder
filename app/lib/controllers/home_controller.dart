@@ -203,6 +203,93 @@ class HomeController extends ChangeNotifier {
     );
   }
 
+  // ---------------------------------------------------------------
+  // PULL-TO-REFRESH: Friss nearby lekérés az aktuális GPS pozícióval.
+  //
+  // Ha van ismert pozíció, azt használjuk azonnali fetch-re,
+  // közben háttérben friss GPS-t kérünk. Ha a friss pozíció
+  // jelentősen eltér (>500m), újra lekérdezzük a boltokat.
+  // Ha nincs ismert pozíció, megpróbálunk friss GPS-t szerezni.
+  // ---------------------------------------------------------------
+  Future<void> refreshShops() async {
+    // Azonnali fetch a jelenlegi ismert pozícióval
+    if (myPosition != null) {
+      try {
+        final freshShops = await _apiService.fetchNearby(
+          myPosition!.latitude,
+          myPosition!.longitude,
+        );
+
+        if (!_isDisposed) {
+          shops = freshShops;
+          _lastFetchPosition = myPosition;
+          _sortShopsByDistance();
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint("Pull-to-refresh hiba: $e");
+        // Hiba esetén csendben visszatérünk — a lista marad ami volt
+        return;
+      }
+
+      // Háttérben friss GPS pozíciót is kérünk
+      try {
+        final freshPosition = await _locationService.determinePosition();
+        if (freshPosition != null && !_isDisposed) {
+          final double distMoved = Geolocator.distanceBetween(
+            myPosition!.latitude,
+            myPosition!.longitude,
+            freshPosition.latitude,
+            freshPosition.longitude,
+          );
+
+          myPosition = freshPosition;
+          _locationService.savePosition(freshPosition);
+
+          // Ha jelentősen mozdult, újra lekérdezzük
+          if (distMoved > 500) {
+            final updatedShops = await _apiService.fetchNearby(
+              freshPosition.latitude,
+              freshPosition.longitude,
+            );
+
+            if (!_isDisposed) {
+              shops = updatedShops;
+              _lastFetchPosition = freshPosition;
+              _sortShopsByDistance();
+              notifyListeners();
+            }
+          }
+        }
+      } catch (_) {
+        // GPS pontosítás opcionális — ha nem sikerül, nem baj
+      }
+    } else {
+      // Nincs pozíciónk → próbáljunk GPS-t szerezni
+      try {
+        final freshPosition = await _locationService.determinePosition();
+        if (freshPosition != null && !_isDisposed) {
+          myPosition = freshPosition;
+          _locationService.savePosition(freshPosition);
+
+          final freshShops = await _apiService.fetchNearby(
+            freshPosition.latitude,
+            freshPosition.longitude,
+          );
+
+          if (!_isDisposed) {
+            shops = freshShops;
+            _lastFetchPosition = freshPosition;
+            _sortShopsByDistance();
+            notifyListeners();
+          }
+        }
+      } catch (e) {
+        debugPrint("Pull-to-refresh GPS hiba: $e");
+      }
+    }
+  }
+
   // --- Újrapróbálkozás metódus a UI gombjának ---
   Future<void> retryInitialLoad() async {
     if (isLoading) return; // Ha már tölt, ne csináljon semmit!

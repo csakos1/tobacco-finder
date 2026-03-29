@@ -149,6 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onShopSelected: _onShopSelectedFromList,
                         currentFilter: _controller.currentFilter,
                         onFilterChanged: _controller.setFilter,
+                        onRefresh: _controller.refreshShops,
                       ),
                     ],
                   ),

@@ -13,6 +13,7 @@ class ShopList extends StatefulWidget {
   final Function(Shop) onShopSelected;
   final ShopFilter currentFilter;
   final Function(ShopFilter) onFilterChanged;
+  final Future<void> Function()? onRefresh;
 
   const ShopList({
     super.key,
@@ -21,6 +22,7 @@ class ShopList extends StatefulWidget {
     required this.onShopSelected,
     required this.currentFilter,
     required this.onFilterChanged,
+    this.onRefresh,
   });
 
   @override
@@ -39,7 +41,7 @@ class _ShopListState extends State<ShopList> {
     // KIVETTÜK A RENDEZÉSI LOGIKÁT!
     // A widget.shops már alapból távolság szerint rendezve érkezik a Controllertől.
 
-    return CustomScrollView(
+    final scrollView = CustomScrollView(
       slivers: [
         // --- 1. RÖGZÍTETT SZŰRŐ FEJLÉC (SliverAppBar) ---
         SliverAppBar(
@@ -376,5 +378,20 @@ class _ShopListState extends State<ShopList> {
           ),
       ],
     );
+
+    // ---------------------------------------------------------------
+    // PULL-TO-REFRESH: Ha van onRefresh callback, a CustomScrollView-t
+    // RefreshIndicator-ba csomagoljuk. Az edgeOffset a pinned
+    // SliverAppBar (56px) alá tolja a spinner-t.
+    // ---------------------------------------------------------------
+    if (widget.onRefresh != null) {
+      return RefreshIndicator(
+        onRefresh: widget.onRefresh!,
+        edgeOffset: 56.0,
+        child: scrollView,
+      );
+    }
+
+    return scrollView;
   }
 }
