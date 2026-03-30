@@ -39,7 +39,7 @@ $COMPOSE run --rm --entrypoint "\
   rm -rf /etc/letsencrypt/renewal/$DOMAIN.conf" certbot
 
 echo "=== 4/5 — Valódi Let's Encrypt tanúsítvány igénylése ==="
-$COMPOSE run --rm --entrypoint "" certbot certonly \
+$COMPOSE run --rm --entrypoint "certbot" certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "$EMAIL" \
