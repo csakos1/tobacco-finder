@@ -1,6 +1,6 @@
+// app/lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../main.dart'; // A themeNotifier és hapticNotifier eléréséhez
+import '../services/app_settings.dart';
 import '../services/haptic_service.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -9,6 +9,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final settings = AppSettings.instance;
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -59,7 +60,7 @@ class SettingsScreen extends StatelessWidget {
                         title: "Téma",
                         // Itt használjuk a ValueListenableBuilder-t, hogy a felirat frissüljön
                         subtitleWidget: ValueListenableBuilder<ThemeMode>(
-                          valueListenable: themeNotifier,
+                          valueListenable: settings.themeNotifier,
                           builder: (context, mode, _) =>
                               Text(_getThemeName(mode)),
                         ),
@@ -68,12 +69,11 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       _GroupItem(
                         title: "Rezgés visszajelzés",
-                        //subtitle: "Finom rezgés navigációnál és szűrésnél",
                         icon: Icons.vibration,
                         onTap: () => _toggleHaptic(),
                         // Trailing Switch widget a ki/bekapcsoláshoz
                         trailingWidget: ValueListenableBuilder<bool>(
-                          valueListenable: hapticNotifier,
+                          valueListenable: settings.hapticNotifier,
                           builder: (context, isEnabled, _) => Switch(
                             value: isEnabled,
                             onChanged: (_) => _toggleHaptic(),
@@ -93,25 +93,26 @@ class SettingsScreen extends StatelessWidget {
 
   /// Haptic beállítás togglelése és mentése
   void _toggleHaptic() async {
-    final newValue = !hapticNotifier.value;
-    hapticNotifier.value = newValue;
+    final settings = AppSettings.instance;
+    final wasDisabled = !settings.isHapticEnabled;
+
+    await settings.toggleHaptic();
 
     // Ha éppen bekapcsoltuk, adjunk egy finom rezgést visszajelzésként
-    if (newValue) {
+    if (wasDisabled) {
       HapticService.lightImpact();
     }
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('haptic_enabled', newValue);
   }
 
   // Material 3 Expressive Dialog
   void _showThemeDialog(BuildContext context) {
+    final settings = AppSettings.instance;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return ValueListenableBuilder<ThemeMode>(
-          valueListenable: themeNotifier,
+          valueListenable: settings.themeNotifier,
           builder: (context, currentMode, _) {
             return AlertDialog(
               icon: const Icon(
@@ -173,11 +174,7 @@ class SettingsScreen extends StatelessWidget {
       groupValue: currentMode,
       onChanged: (ThemeMode? value) async {
         if (value != null) {
-          themeNotifier.value = value;
-
-          // Elmentjük a beállítást
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt('theme_mode', value.index);
+          await AppSettings.instance.setThemeMode(value);
 
           // Ha async hívás után navigálunk, ellenőrizni kell, hogy a context még él-e
           if (context.mounted) {

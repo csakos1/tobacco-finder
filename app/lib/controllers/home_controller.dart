@@ -6,9 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import '../models/shop.dart';
 import '../models/shop_filter.dart';
 import '../services/location_service.dart';
+import '../services/app_settings.dart';
 import '../repositories/shop_repository.dart';
 import '../controllers/map_state_controller.dart';
-import '../main.dart' show initialMapPosition;
 
 // ---------------------------------------------------------------
 // HOME CONTROLLER (Orchestrátor)
@@ -69,7 +69,7 @@ class HomeController extends ChangeNotifier {
   // ---------------------------------------------------------------
   HomeController() {
     // Elmentett pozíció használata kezdő térképközéppontnak
-    final savedPosition = initialMapPosition;
+    final savedPosition = AppSettings.instance.initialMapPosition;
     final startPosition = savedPosition ?? const LatLng(47.50712, 19.04557);
 
     mapState = MapStateController(initialPosition: startPosition);
