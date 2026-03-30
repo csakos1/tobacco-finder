@@ -14,7 +14,7 @@
 set -e
 
 DOMAIN="api.holadohi.hu"
-EMAIL="akos@csaba.vip"  # ← Cseréld ki a saját email címedre!
+EMAIL="akos@csaba.vip"
 COMPOSE="docker compose"
 CERT_PATH="/etc/letsencrypt/live/$DOMAIN"
 
@@ -39,7 +39,7 @@ $COMPOSE run --rm --entrypoint "\
   rm -rf /etc/letsencrypt/renewal/$DOMAIN.conf" certbot
 
 echo "=== 4/5 — Valódi Let's Encrypt tanúsítvány igénylése ==="
-$COMPOSE run --rm certbot certonly \
+$COMPOSE run --rm --entrypoint "" certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "$EMAIL" \
