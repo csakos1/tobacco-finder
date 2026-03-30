@@ -68,6 +68,27 @@ class _TobaccoMapState extends State<TobaccoMap> {
   // Eltároljuk az aktuális témát, hogy tudjuk, mikor kell újrarajzolni a markereket
   bool? _lastIsDarkMode;
 
+  // ---------------------------------------------------------------
+  // A térkép kezdő zoom szintje. Konstansba kiemelve, hogy a
+  // GoogleMap initialCameraPosition és a ClusterManager seed
+  // mindig szinkronban legyen.
+  // ---------------------------------------------------------------
+  static const double _initialZoom = 15.0;
+
+  // ---------------------------------------------------------------------------
+  // SAJÁT ZOOM TRACKING
+  //
+  // A ClusterManager belső _zoom mezőjét a setMapId() aszinkron módon
+  // felülírja a getZoomLevel() eredményével, ami animáció közben hibás
+  // értéket adhat vissza. Ezért mi külön követjük az utolsó ismert
+  // kamera pozíciót, és MINDEN updateMap/setItems hívás előtt
+  // visszaírjuk a manager belső _zoom-ját az onCameraMove() seed-del.
+  //
+  // Ez a mező a _zoomGuard() metódussal együtt biztosítja, hogy a
+  // klaszterezés mindig a valós zoom szinttel dolgozzon.
+  // ---------------------------------------------------------------------------
+  CameraPosition? _lastCameraPosition;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +120,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
       );
 
       // Klaszterező kényszerítése a markerek újrarajzolására (sötét/világos ikonok)
+      _zoomGuard();
       _manager.setItems(_getClusterItems());
     }
   }
@@ -107,6 +129,9 @@ class _TobaccoMapState extends State<TobaccoMap> {
   void didUpdateWidget(covariant TobaccoMap oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.shops != oldWidget.shops) {
+      // A setItems() belsőleg updateMap()-et hív, ami a _zoom-ot használja.
+      // A _zoomGuard() biztosítja, hogy a _zoom a valós értéken legyen.
+      _zoomGuard();
       _manager.setItems(_getClusterItems());
     }
 
@@ -116,6 +141,29 @@ class _TobaccoMapState extends State<TobaccoMap> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // ZOOM GUARD: A ClusterManager belső _zoom mezőjének szinkronizálása.
+  //
+  // A setMapId() aszinkron getZoomLevel() hívása felülírhatja a _zoom-ot
+  // hibás értékkel (pl. animáció közben). Ez a metódus visszaírja az
+  // utolsó ismert helyes kamera pozícióból (vagy a kezdő zoom-ból).
+  //
+  // Hívási helyek: onCameraIdle, didUpdateWidget (setItems előtt),
+  // didChangeDependencies (setItems előtt), setMapId.then() callback.
+  // ---------------------------------------------------------------------------
+  void _zoomGuard() {
+    final position =
+        _lastCameraPosition ??
+        CameraPosition(target: widget.mapCenter, zoom: _initialZoom);
+    _manager.onCameraMove(position);
+  }
+
+  // ---------------------------------------------------------------------------
+  // KLASZTEREZŐ INICIALIZÁLÁSA
+  //
+  // stopClusteringZoom: E zoom szint felett a klaszterezés kikapcsol,
+  // minden bolt egyedi markerként jelenik meg.
+  // ---------------------------------------------------------------------------
   // --- Klaszterező inicializálása ---
   ClusterManager<ShopClusterItem> _initClusterManager() {
     return ClusterManager<ShopClusterItem>(
@@ -124,6 +172,8 @@ class _TobaccoMapState extends State<TobaccoMap> {
       markerBuilder: _markerBuilder,
       levels: const [1, 4.25, 6.75, 10, 12.0, 13.0, 14.0, 15.0, 16],
       extraPercent: 0.2,
+      maxItemsForMaxDistAlgo: 2000,
+      stopClusteringZoom: 14.5,
     );
   }
 
@@ -247,7 +297,7 @@ class _TobaccoMapState extends State<TobaccoMap> {
           style: isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
           initialCameraPosition: CameraPosition(
             target: widget.mapCenter,
-            zoom: 15.0,
+            zoom: _initialZoom,
           ),
           markers: _allMarkers,
 
@@ -259,7 +309,35 @@ class _TobaccoMapState extends State<TobaccoMap> {
 
           onMapCreated: (GoogleMapController controller) {
             _mapController = controller;
-            _manager.setMapId(controller.mapId);
+
+            // -----------------------------------------------------------------
+            // ZOOM RACE CONDITION JAVÍTÁS — 3 lépés:
+            //
+            // 1. SEED: A _zoom inicializálása a kezdő kamera pozícióval,
+            //    MIELŐTT a setMapId() bármi mást csinálna. Ez biztosítja,
+            //    hogy a `late double _zoom` mező már inicializálva legyen,
+            //    ha az onCameraIdle korábban tüzel, mint a setMapId awaittje.
+            //
+            // 2. setMapId(withUpdate: false): Beállítja a _mapId-t (ami KELL
+            //    a getVisibleRegion bounds lekérdezéshez), de NEM triggerel
+            //    azonnali updateMap()-et a potenciálisan hibás getZoomLevel
+            //    eredményével.
+            //
+            // 3. RE-SEED: Miután a setMapId() awaittje lefut és felülírja
+            //    a _zoom-ot, visszaállítjuk a helyes értékre.
+            //
+            // A tényleges első klaszterezés az onCameraIdle-ből jön, ami
+            // szintén _zoomGuard()-dal van védve.
+            // -----------------------------------------------------------------
+            _manager.onCameraMove(
+              CameraPosition(target: widget.mapCenter, zoom: _initialZoom),
+            );
+
+            _manager.setMapId(controller.mapId, withUpdate: false).then((_) {
+              // A setMapId belső getZoomLevel() felülírta a _zoom-ot →
+              // visszaállítjuk a helyes értékre
+              _zoomGuard();
+            });
 
             controller.setMapStyle(
               isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,
@@ -270,12 +348,21 @@ class _TobaccoMapState extends State<TobaccoMap> {
             }
           },
           onCameraMove: (CameraPosition position) {
+            // Saját tracking — mindig a legfrissebb valós kamera pozíció
+            _lastCameraPosition = position;
+
             _manager.onCameraMove(position);
             if (widget.onCameraMove != null) {
               widget.onCameraMove!(position);
             }
           },
-          onCameraIdle: _manager.updateMap,
+          onCameraIdle: () {
+            // Zoom guard: biztosítja, hogy a _zoom a valós értéken legyen
+            // a klaszterezés futtatása előtt (a setMapId async getZoomLevel
+            // felülírhatta hibás értékkel).
+            _zoomGuard();
+            _manager.updateMap();
+          },
 
           // Térkép üres területére koppintás → billentyűzet bezárása
           onTap: (_) {
