@@ -37,9 +37,17 @@ const MAX_LIMIT = 1000;
 // A sugár alapértéke 20 km (20000 méter), maximuma 50 km.
 // A 50 km-es korlát véd az indokolatlanul nagy lekérdezések ellen,
 // amelyek az egész országot lefednék és túlterhelnék a PostGIS-t.
+//
+// A NEARBY_DEFAULT_LIMIT az alapértelmezett boltszám, amit a nearby
+// végpont visszaad. A NEARBY_MAX_LIMIT a szerver oldali felső korlát —
+// ez véd a túl nagy response-ok ellen nagy sugárral történő lekérésnél.
+// 200 bolt bőven lefedi a normál használatot (térkép + lista nézet),
+// és a kliens memória-limitjével (500) is jól összhangban van.
 // ---------------------------------------------------------------
 const DEFAULT_RADIUS_METERS = 20000;
 const MAX_RADIUS_METERS = 50000;
+const NEARBY_DEFAULT_LIMIT = 200;
+const NEARBY_MAX_LIMIT = 500;
 
 @Controller('shops')
 export class ShopsController {
@@ -86,8 +94,18 @@ export class ShopsController {
     long: number,
     @Query('radius', new ParseFloatPipe({ optional: true, min: 1, max: MAX_RADIUS_METERS }))
     radius?: number,
+    @Query('limit', new DefaultValuePipe(NEARBY_DEFAULT_LIMIT), ParseIntPipe)
+    limit?: number,
   ) {
-    return this.shopsService.findNearby(lat, long, radius ?? DEFAULT_RADIUS_METERS);
+    // Szerver oldali felső korlát — a kliens nem kérhet többet, mint NEARBY_MAX_LIMIT
+    const safeLimit = Math.min(Math.max(limit ?? NEARBY_DEFAULT_LIMIT, 1), NEARBY_MAX_LIMIT);
+
+    return this.shopsService.findNearby(
+      lat,
+      long,
+      radius ?? DEFAULT_RADIUS_METERS,
+      safeLimit,
+    );
   }
 
   @Get()

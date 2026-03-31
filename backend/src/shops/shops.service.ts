@@ -54,8 +54,30 @@ export class ShopsService {
     return shops;
   }
 
-  // Csak a közeli boltok lekérése (lat, long és távolság alapján)
-  async findNearby(lat: number, long: number, radiusInMeters: number = 20000) {
+  // ---------------------------------------------------------------
+  // KÖZELI BOLTOK LEKÉRÉSE — RENDEZVE ÉS LIMITÁLVA
+  //
+  // Korábban ez a metódus ORDER BY és LIMIT nélkül adta vissza az
+  // összes boltot a sugáron belül. Budapest belvárosában 20 km-es
+  // sugárral ez 200-500 boltot jelentett random sorrendben — a
+  // kliensnek kellett rendezni, és 50 km-es radiussal az ország
+  // fele bejöhetett volna.
+  //
+  // A javítás:
+  //   - ORDER BY ST_Distance: a szerver adja vissza távolság szerint
+  //     rendezve, így a kliens azonnal használható listát kap
+  //   - LIMIT: szerver oldali felső korlát véd a túl nagy response
+  //     ellen — a kliens soha nem kap többet, mint amennyit kezelni tud
+  //   - A distance_meters mező opcionálisan felhasználható a kliensen,
+  //     de a jelenlegi frontend a saját Geolocator-alapú számítást
+  //     használja, ami konzisztensebb a térképes UX-szel
+  // ---------------------------------------------------------------
+  async findNearby(
+    lat: number,
+    long: number,
+    radiusInMeters: number = 20000,
+    limit: number = 200,
+  ) {
     const shops = await this.prisma.$queryRaw`
       SELECT id, name, address, city, 
       opening_hours as "openingHours", 
@@ -67,6 +89,11 @@ export class ShopsService {
         ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326), 
         ${radiusInMeters}
       )
+      ORDER BY ST_Distance(
+        location,
+        ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326)
+      )
+      LIMIT ${limit}
     `;
     return shops;
   }
