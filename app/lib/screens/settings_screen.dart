@@ -1,5 +1,6 @@
 // app/lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/app_settings.dart';
 import '../services/haptic_service.dart';
 
@@ -14,7 +15,6 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       body: CustomScrollView(
-        physics: const NeverScrollableScrollPhysics(),
         slivers: [
           SliverAppBar.large(
             pinned: true,
@@ -83,6 +83,18 @@ class SettingsScreen extends StatelessWidget {
                     ],
                   ),
                 ],
+              ),
+            ),
+          ),
+
+          // --- VERZIÓSZÁM A KÉPERNYŐ ALJÁN ---
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 24.0),
+                child: _VersionLabel(),
               ),
             ),
           ),
@@ -210,6 +222,34 @@ class SettingsScreen extends StatelessWidget {
       case ThemeMode.dark:
         return "Sötét";
     }
+  }
+}
+
+// --- VERZIÓSZÁM WIDGET ---
+
+/// Aszinkron módon olvassa ki a pubspec.yaml-ból a verziószámot.
+class _VersionLabel extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final info = snapshot.data!;
+        // Formátum: "v1.0.0 (1)" — verzió + build szám
+        final versionText = 'v${info.version}';
+
+        return Text(
+          versionText,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+          ),
+        );
+      },
+    );
   }
 }
 
