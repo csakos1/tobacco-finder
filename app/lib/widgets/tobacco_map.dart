@@ -114,6 +114,15 @@ class _TobaccoMapState extends State<TobaccoMap> {
     _lastIsDarkMode = isDarkMode;
 
     if (themeChanged) {
+      // ---------------------------------------------------------------
+      // MARKER CACHE INVALIDÁLÁS
+      //
+      // A régi téma ikonjait ki kell dobni, hogy a setItems() által
+      // triggerelt _markerBuilder() újra lerajzolja őket az új színekkel.
+      // Ez szinkron és azonnali — a rajzolás csak cache-miss-nél történik.
+      // ---------------------------------------------------------------
+      MarkerGenerator.invalidateThemeCache();
+
       // Térkép stílus frissítése az új témához
       _mapController?.setMapStyle(
         isDarkMode ? MapStyles.darkStyle : MapStyles.lightStyle,

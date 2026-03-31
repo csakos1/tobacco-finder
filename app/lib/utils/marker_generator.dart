@@ -1,3 +1,4 @@
+// app/lib/utils/marker_generator.dart
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -13,10 +14,47 @@ class MarkerGenerator {
   // Keresési pin szín — élénk piros, hogy jól megkülönböztethető legyen
   static const Color _searchPinColor = Color(0xFFE53935);
 
+  // ---------------------------------------------------------------------------
+  // BOLT IKON CACHE — 4 variáns: open/closed × light/dark
+  //
+  // A kulcs formátuma: 'open_dark', 'closed_light', stb.
+  // A témaváltáskor invalidateThemeCache() törli ezt a cache-t.
+  // ---------------------------------------------------------------------------
+  static final Map<String, BitmapDescriptor> _shopIconCache = {};
+
+  // ---------------------------------------------------------------------------
+  // KLASZTER IKON CACHE — szám × téma kombinációnként
+  //
+  // A kulcs formátuma: '5_dark', '12_light', stb.
+  // A témaváltáskor invalidateThemeCache() törli ezt a cache-t.
+  // ---------------------------------------------------------------------------
+  static final Map<String, BitmapDescriptor> _clusterIconCache = {};
+
+  // ---------------------------------------------------------------------------
+  // KERESÉSI PIN CACHE — egyetlen variáns (témafüggetlen)
+  //
+  // NEM törlődik témaváltáskor, mert a piros szín mindkét módban ugyanaz.
+  // ---------------------------------------------------------------------------
+  static BitmapDescriptor? _searchPinCache;
+
+  /// Témaváltáskor hívandó — csak a bolt és klaszter cache-t törli,
+  /// a keresési pin témafüggetlen, ezért azt megtartjuk.
+  static void invalidateThemeCache() {
+    _shopIconCache.clear();
+    _clusterIconCache.clear();
+  }
+
   static Future<BitmapDescriptor> createShopMarker(
     bool isOpen,
     bool isDarkMode,
   ) async {
+    // --- CACHE LOOKUP ---
+    final key =
+        '${isOpen ? 'open' : 'closed'}_${isDarkMode ? 'dark' : 'light'}';
+    final cached = _shopIconCache[key];
+    if (cached != null) return cached;
+
+    // --- CACHE MISS: Rajzolás (csak egyszer fut le variánsonként) ---
     // Aktuális szín kiválasztása a téma alapján
     final Color pinColor = isDarkMode ? _lightBlue : _darkBlue;
 
@@ -67,16 +105,26 @@ class MarkerGenerator {
     );
 
     // Itt történik a varázslat: 135px képet adunk, de 45px méretre kényszerítjük!
-    return BitmapDescriptor.fromBytes(
+    final icon = BitmapDescriptor.fromBytes(
       byteData!.buffer.asUint8List(),
       size: const Size(logicalSize, logicalSize),
     );
+
+    // --- CACHE STORE ---
+    _shopIconCache[key] = icon;
+    return icon;
   }
 
   static Future<BitmapDescriptor> createClusterMarker(
     int clusterSize,
     bool isDarkMode,
   ) async {
+    // --- CACHE LOOKUP ---
+    final key = '${clusterSize}_${isDarkMode ? 'dark' : 'light'}';
+    final cached = _clusterIconCache[key];
+    if (cached != null) return cached;
+
+    // --- CACHE MISS: Rajzolás (csak egyszer fut le méret×téma kombinációnként) ---
     // Aktuális szín kiválasztása a téma alapján
     final Color pinColor = isDarkMode ? _lightBlue : _darkBlue;
 
@@ -127,15 +175,23 @@ class MarkerGenerator {
       format: ui.ImageByteFormat.png,
     );
 
-    return BitmapDescriptor.fromBytes(
+    final icon = BitmapDescriptor.fromBytes(
       byteData!.buffer.asUint8List(),
       size: const Size(logicalSize, logicalSize),
     );
+
+    // --- CACHE STORE ---
+    _clusterIconCache[key] = icon;
+    return icon;
   }
 
   /// Keresési pin — piros szín, fehér kör középen.
   /// Vizuálisan elkülönül a kék boltos pinektől.
   static Future<BitmapDescriptor> createSearchPinMarker() async {
+    // --- CACHE LOOKUP (témafüggetlen, ezért soha nem invalidálódik) ---
+    if (_searchPinCache != null) return _searchPinCache!;
+
+    // --- CACHE MISS: Rajzolás (az app életciklusa alatt pontosan egyszer) ---
     const double logicalSize = 50.0;
     const double dpr = 3.0;
     const double physicalSize = logicalSize * dpr;
@@ -180,9 +236,13 @@ class MarkerGenerator {
       format: ui.ImageByteFormat.png,
     );
 
-    return BitmapDescriptor.fromBytes(
+    final icon = BitmapDescriptor.fromBytes(
       byteData!.buffer.asUint8List(),
       size: const Size(logicalSize, logicalSize),
     );
+
+    // --- CACHE STORE ---
+    _searchPinCache = icon;
+    return icon;
   }
 }
