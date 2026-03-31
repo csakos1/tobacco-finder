@@ -9,6 +9,10 @@ void main() async {
   // Ez kötelező, ha a runApp előtt async hívásokat (pl. SharedPreferences) végzünk
   WidgetsFlutterBinding.ensureInitialized();
 
+  // A fontok az assets/fonts/ mappából töltődnek be (bundolva az APK-ban),
+  // NEM a hálózatról. Ezzel megszűnik a FOUT és ~200-500ms cold start megtakarítás.
+  GoogleFonts.config.allowRuntimeFetching = false;
+
   // Elmentett beállítások betöltése és az AppSettings singleton inicializálása.
   // Ez váltja ki a korábbi top-level globális változókat.
   final prefs = await SharedPreferences.getInstance();
