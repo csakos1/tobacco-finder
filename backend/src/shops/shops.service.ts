@@ -7,9 +7,22 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ShopsService {
   constructor(private prisma: PrismaService) {}
 
-  // Bolt létrehozása
+  // ---------------------------------------------------------------
+  // BOLT LÉTREHOZÁSA
+  //
+  // A nyitvatartást stringify-olt JSON-ként adjuk át a Prisma
+  // paraméteren keresztül, amit a Postgres "text" típussal fogad.
+  // Az opening_hours oszlop típusa "jsonb", és a Postgres 9.0 óta
+  // nincs implicit text→jsonb konverzió (hibakód: 42804). Ezért
+  // szükséges a paraméter mögötti explicit ::jsonb cast.
+  //
+  // null paraméter esetén a NULL::jsonb továbbra is NULL-t ad,
+  // tehát az opcionális mező hiánya továbbra is helyesen kezelt.
+  // ---------------------------------------------------------------
   async create(createShopDto: CreateShopDto) {
     const { name, city, address, lat, long, openingHours } = createShopDto;
+
+    const openingHoursJson = openingHours ? JSON.stringify(openingHours) : null;
 
     await this.prisma.$executeRaw`
       INSERT INTO "tobacco_shops" (id, name, city, address, opening_hours, location)
@@ -18,7 +31,7 @@ export class ShopsService {
         ${name},
         ${city},
         ${address},
-        ${openingHours ? JSON.stringify(openingHours) : null},
+        ${openingHoursJson}::jsonb,
         ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326)
       )
     `;
@@ -118,7 +131,16 @@ export class ShopsService {
     return shops[0];
   }
 
-  // Bolt frissítése UUID alapján
+  // ---------------------------------------------------------------
+  // BOLT FRISSÍTÉSE UUID ALAPJÁN
+  //
+  // Ugyanaz a ::jsonb cast szükséges, mint a create-ben (lásd ott),
+  // különben a COALESCE-ba bekerülő stringify-olt érték "text"
+  // típusként ütközik a "jsonb" oszloppal (hibakód: 42804).
+  //
+  // A undefined → null fallback megőrzi a meglévő értéket a
+  // COALESCE-szal, mivel NULL::jsonb továbbra is NULL marad.
+  // ---------------------------------------------------------------
   async update(id: string, updateShopDto: UpdateShopDto) {
     // Először ellenőrizzük, hogy létezik-e a bolt
     const existing = await this.prisma.$queryRaw<
@@ -146,16 +168,16 @@ export class ShopsService {
     const long = updateShopDto.long ?? currentLong;
     const openingHours = updateShopDto.openingHours;
 
+    const openingHoursJson =
+      openingHours !== undefined ? JSON.stringify(openingHours) : null;
+
     await this.prisma.$executeRaw`
       UPDATE "tobacco_shops"
       SET
         name = COALESCE(${name ?? null}, name),
         city = COALESCE(${city ?? null}, city),
         address = COALESCE(${address ?? null}, address),
-        opening_hours = COALESCE(
-          ${openingHours !== undefined ? JSON.stringify(openingHours) : null},
-          opening_hours
-        ),
+        opening_hours = COALESCE(${openingHoursJson}::jsonb, opening_hours),
         location = ST_SetSRID(ST_MakePoint(${long}, ${lat}), 4326)
       WHERE id = ${id}::uuid
     `;
