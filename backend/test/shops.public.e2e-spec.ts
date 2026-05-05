@@ -1,12 +1,15 @@
 // test/shops.public.e2e-spec.ts
 //
-// Public végpontok E2E tesztjei (kezdő készlet).
-// Ez a fájl bizonyítja, hogy az app-bootstrap helyesen indít egy
-// NestJS appot, és a teljes HTTP → Controller → Service → DB lánc
-// válaszol a fixture-adatokkal.
+// Public végpontok teljes E2E lefedése.
 //
-// A KÖVETKEZŐ KÖRÖN bővítjük: 400 validációs hibák, /shops/nearby
-// teszt-csokor, a controller pontos viselkedéséhez igazítva.
+// Fedett végpontok:
+//   - GET /shops              (alapértelmezett + paginálás)
+//   - GET /shops/nearby       (happy path + validáció)
+//   - GET /shops/:id          (happy path + 404 + 400 invalid UUID)
+//
+// Ami SZÁNDÉKOSAN nincs itt:
+//   - 429 rate limit teszt — külön spec fájlba kerül a Throttler
+//     in-memory állapota miatt (külön app instance kell hozzá).
 
 import { INestApplication } from '@nestjs/common';
 import { Client } from 'pg';
@@ -25,22 +28,23 @@ describe('Shops — Public végpontok (E2E)', () => {
   let pgClient: Client;
   let close: () => Promise<void>;
 
-  // Az app és a DB kapcsolat egyszer indul a teljes describe blokkra.
-  // Az app boot ~500-800 ms — nem akarjuk minden teszt előtt megismételni.
   beforeAll(async () => {
+    // A controller findAll-ja minden hívásra console.log-ol — teszt-zaj
+    // elnyomás suite szinten. Egyszer beállítjuk, egyszer visszaállítjuk.
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
     const bootstrapped = await bootstrapTestApp();
     app = bootstrapped.app;
     pgClient = bootstrapped.pgClient;
     close = bootstrapped.close;
   });
 
-  // Cleanup: a helper által visszaadott close() rendezetten zár mindent.
   afterAll(async () => {
     await close();
+    jest.restoreAllMocks();
   });
 
   // Minden teszt friss DB állapottal indul: 6 fixture-bolt.
-  // Ugyanaz a TRUNCATE+SEED minta, ami az integrációs tesztben már bevált.
   beforeEach(async () => {
     await truncateShops(pgClient);
     await seedShops(pgClient);
@@ -57,8 +61,7 @@ describe('Shops — Public végpontok (E2E)', () => {
       // Assert
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      // A pontos elemszám a backend alap-LIMIT-jétől függ; a fixture-ök
-      // száma (6) biztosan kisebb a default LIMIT-nél, így mindet vissza kell adnia.
+      // A controller default LIMIT-je 500, a fixture-ek száma 6 → mind belefér.
       expect(response.body.length).toBe(ALL_SHOPS.length);
     });
 
@@ -71,6 +74,90 @@ describe('Shops — Public végpontok (E2E)', () => {
       // Assert
       expect(response.status).toBe(200);
       expect(response.body).toHaveLength(2);
+    });
+  });
+
+  // ===============================================================
+  // GET /shops/nearby — közeli boltok
+  // ===============================================================
+  describe('GET /shops/nearby', () => {
+    it('200-zal és Budapest közeli boltokat ad vissza Hősök tere koordinátáira', async () => {
+      // Arrange — Hősök tere koordinátái, 5 km-es sugár
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 47.5147, long: 19.0779, radius: 5000 });
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.length).toBeGreaterThan(0);
+      // Csak budapesti boltokat várunk ekkora sugárral
+      response.body.forEach((shop: { city: string }) => {
+        expect(shop.city).toBe('Budapest');
+      });
+    });
+
+    it('200-zal és üres tömbbel tér vissza, ha a sugáron belül nincs bolt', async () => {
+      // Arrange — Atlanti-óceán közepe, 1 km-es sugár → semmi
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 0, long: -30, radius: 1000 });
+
+      // Assert
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual([]);
+    });
+
+    it('400-at ad, ha hiányzik a lat paraméter', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ long: 19.0779 });
+
+      // Assert
+      expect(response.status).toBe(400);
+    });
+
+    it('400-at ad, ha hiányzik a long paraméter', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 47.5147 });
+
+      // Assert
+      expect(response.status).toBe(400);
+    });
+
+    it('400-at ad, ha lat nem szám', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 'not-a-number', long: 19.0779 });
+
+      // Assert
+      expect(response.status).toBe(400);
+    });
+
+    it('400-at ad, ha lat tartományon kívül van (>90)', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 91, long: 19.0779 });
+
+      // Assert
+      expect(response.status).toBe(400);
+    });
+
+    it('400-at ad, ha radius meghaladja a MAX_RADIUS_METERS-t (50000)', async () => {
+      // Act
+      const response = await request(app.getHttpServer())
+        .get('/shops/nearby')
+        .query({ lat: 47.5147, long: 19.0779, radius: 100000 });
+
+      // Assert
+      expect(response.status).toBe(400);
     });
   });
 
@@ -105,6 +192,17 @@ describe('Shops — Public végpontok (E2E)', () => {
 
       // Assert
       expect(response.status).toBe(404);
+    });
+
+    it('400-at ad érvénytelen UUID formátumra', async () => {
+      // Arrange — ParseUUIDPipe a controlleren ezt elutasítja
+      // Act
+      const response = await request(app.getHttpServer()).get(
+        '/shops/not-a-uuid',
+      );
+
+      // Assert
+      expect(response.status).toBe(400);
     });
   });
 });
