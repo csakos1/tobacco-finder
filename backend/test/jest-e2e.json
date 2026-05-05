@@ -8,5 +8,7 @@
   },
   "globalSetup": "<rootDir>/helpers/global-setup.ts",
   "globalTeardown": "<rootDir>/helpers/global-teardown.ts",
-  "testTimeout": 60000
+  "testTimeout": 60000,
+  "collectCoverageFrom": ["../src/**/*.(t|j)s"],
+  "coverageDirectory": "../coverage-e2e"
 }
