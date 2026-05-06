@@ -1,0 +1,106 @@
+name: CI
+
+# A workflow akkor fut le, ha:
+#   - push történik a main branch-re (pl. közvetlen push, merge)
+#   - pull request nyílik vagy frissül a main felé
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Minden run-step a backend/ almappában fut, mert a NestJS kód ott van.
+# Ez nem érinti a uses: action-öket — azok a repo gyökérhez relatívak.
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  # ==============================================================
+  # UNIT JOB — gyors, izolált, mockolt függőségekkel.
+  # ==============================================================
+  unit:
+    name: Unit teszt + lefedettség
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Repo letöltése
+        uses: actions/checkout@v4
+
+      - name: Node.js setup (v22 LTS, npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          # A cache key-t ebből a lock fájlból generálja.
+          # FONTOS: ez a path a repo gyökeréhez relatív, NEM a working-directory-hoz.
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Függőségek telepítése (npm ci)
+        run: npm ci
+
+      - name: Prisma Client generálás
+        # A @prisma/client futás közben a generált típusokra támaszkodik.
+        # Postinstall hook nincs a package.json-ben, ezért manuálisan futtatjuk.
+        run: npx prisma generate
+
+      - name: Unit tesztek futtatása lefedettséggel
+        run: npm run test:cov
+
+      - name: Coverage feltöltése a Codecov-ra (unit flag)
+        # if: always() = akkor is fut, ha az előző step elhasalt.
+        # Így legalább részleges coverage felmegy, és a hibát a Codecov dashboardon is látjuk.
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Path a repo gyökeréhez relatív.
+          directory: ./backend/coverage
+          # A 'flags' címke a Codecov dashboardon külön megjeleníti
+          # az unit és e2e lefedettséget.
+          flags: unit
+          name: unit-coverage
+          # Ha a Codecov upload sikertelen, ne döntse a CI-t.
+          fail_ci_if_error: false
+
+  # ==============================================================
+  # E2E JOB — teljes integrációs réteg, valódi PostGIS testcontainer-rel.
+  # ==============================================================
+  e2e:
+    name: Integration + E2E teszt + lefedettség
+    runs-on: ubuntu-latest
+    # 20 perces timeout — a testcontainers image-pull miatt magasabb.
+    timeout-minutes: 20
+
+    steps:
+      - name: Repo letöltése
+        uses: actions/checkout@v4
+
+      - name: Node.js setup (v22 LTS, npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Függőségek telepítése (npm ci)
+        run: npm ci
+
+      - name: Prisma Client generálás
+        run: npx prisma generate
+
+      - name: E2E + integrációs tesztek lefedettséggel
+        # A Docker az ubuntu-latest runner-en eleve elérhető — a testcontainers
+        # ezzel a daemonnal fog beszélni a PostGIS konténer indításához.
+        run: npm run test:e2e:cov
+
+      - name: Coverage feltöltése a Codecov-ra (e2e flag)
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./backend/coverage-e2e
+          flags: e2e
+          name: e2e-coverage
+          fail_ci_if_error: false

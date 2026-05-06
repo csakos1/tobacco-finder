@@ -1,3 +1,7 @@
+[![CI](https://github.com/csakos1/tobacco-finder/actions/workflows/test.yml/badge.svg)](https://github.com/csakos1/tobacco-finder/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/csakos1/tobacco-finder/graph/badge.svg)](https://codecov.io/gh/csakos1/tobacco-finder)
+
+
 ![Flutter](https://img.shields.io/badge/Flutter-3.38.1-02569B?logo=flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/Dart-3.10.1-0175C2?logo=dart&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11.0.1-E0234E?logo=nestjs&logoColor=white)
@@ -127,6 +131,36 @@ Deployment configuration lives in `deploy/` (Nginx config, Let's Encrypt bootstr
 - **Rate limiting** — Public read endpoints are globally rate-limited to 100 requests per 60 seconds per IP via `@nestjs/throttler`. Protected endpoints skip throttling (already guarded by the API key).
 - **Input validation** — All incoming request bodies are validated by `class-validator` decorators through a global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`). UUID path parameters use `ParseUUIDPipe`.
 - **HTTPS** — Nginx terminates TLS with certificates from Let's Encrypt, auto-renewed by Certbot.
+
+---
+
+## Testing
+
+The backend ships with a layered test suite covering unit, integration, and end-to-end behaviour. Every layer runs in CI on each push and pull request to `main`, with coverage reports uploaded to Codecov under separate flags so each layer's contribution is tracked independently.
+
+| Layer | Count | Runtime | Tooling |
+|-------|-------|---------|---------|
+| Unit | 130 | ~1.2 s | Jest with mocked dependencies, isolated DI containers |
+| Integration | 26 | ~1.2 s | Jest + Testcontainers (real PostGIS 15-3.3), shared container, fresh fixtures per test |
+| E2E | 27 | ~1.0 s | Supertest against in-process NestJS app, full HTTP pipeline incl. guards & pipes |
+| **Total** | **183** | **~3.5 s** | |
+
+### Highlights
+
+- **One PostGIS Testcontainer** is shared across the entire integration + E2E suite via Jest's `globalSetup`, with `prisma migrate deploy` run programmatically against the fresh database — same migration path as production.
+- **Deterministic fixtures** — Six pre-defined shops with fixed UUIDs (Hungarian metropolitan coordinates plus two synthetic edge cases at the pole and the date line) are seeded into a freshly truncated `tobacco_shops` table before each test.
+- **Serial e2e execution** (`maxWorkers: 1`) eliminates worker-level race conditions on the shared database, guaranteeing deterministic state per spec.
+- **Throttler isolation** — Each E2E spec boots its own NestJS app instance to avoid carrying rate-limit state across specs.
+- **DTO validation tested** by inspecting `class-validator` constraint keys (e.g., `isNotEmpty`, `min`, `max`), not error messages — robust against future i18n or wording changes.
+
+### Continuous integration
+
+GitHub Actions runs two parallel jobs on every push and PR to `main`:
+
+- **`unit`** — Jest unit suite with coverage upload (`unit` flag)
+- **`e2e`** — Integration + E2E suite against a real PostGIS Testcontainer with coverage upload (`e2e` flag)
+
+Both jobs use Node.js 22 LTS with the built-in npm cache. Workflow file: [`.github/workflows/test.yml`](./.github/workflows/test.yml)
 
 ---
 
